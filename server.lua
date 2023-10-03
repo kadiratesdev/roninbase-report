@@ -1,6 +1,3 @@
--- Tech Development
--- Join our discord for support: https://discord.gg/2mXXhQy
-
 local QBCore = exports['qb-core']:GetCoreObject()
 
 RegisterServerEvent('ricky-report:createReport')
