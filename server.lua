@@ -132,16 +132,17 @@ getStaffList = function()
               status = "online",
             })
           end
-
+          local isdetect  = false
           for k,v in pairs(staff) do 
             if v.name == GetPlayerName(xPlayer) then 
-               
-            else
-              table.insert(staff, {
-                name = GetPlayerName(xPlayer),
-                status = "online",
-              })
+              isdetect = true
             end
+          end
+          if not isdetect then 
+            table.insert(staff, {
+              name = GetPlayerName(xPlayer),
+              status = "online",
+            })
           end
         end
       end
