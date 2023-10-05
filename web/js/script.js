@@ -56,6 +56,95 @@ const app = new Vue({
         },
 
         updateSelectedIndex(index) {
+
+            setTimeout(() => {
+
+                var isDataTable = $.fn.DataTable.isDataTable('#reportTable1');
+                if (!isDataTable) {
+                        $('#reportTable1').DataTable(
+                            {
+                                "language": {
+                                    "search":"Ara:",
+                                    "lengthMenu": "Sayfada _MENU_ kayıt gösteriliyor",
+                                    "zeroRecords": "Kayıt bulunamadı",
+                                    "info": "Sayfa _PAGE_ / _PAGES_",
+                                    "infoEmpty": "Kayıt bulunamadı",
+                                    "infoFiltered": "(filtered from _MAX_ total records)",
+                                    "paginate": {
+                                        "first":      "İlk",
+                                        "last":       "Son",
+                                        "next":       "Sonraki",
+                                        "previous":   "Önceki"
+                                    },
+                                },
+                                "order": [[ 3, "desc" ]],
+                                "pageLength": 10,
+                                "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "All"]]
+                            }
+                        );
+            }
+            }, 500);
+           
+
+            setTimeout(() => {
+
+                var isDataTable = $.fn.DataTable.isDataTable('#reportTable2');
+
+                if (!isDataTable) {
+
+                    $('#reportTable2').DataTable(
+                        {
+                            "language": {
+                                "search":"Ara:",
+                                "lengthMenu": "Sayfada _MENU_ kayıt gösteriliyor",
+                                "zeroRecords": "Kayıt bulunamadı",
+                                "info": "Sayfa _PAGE_ / _PAGES_",
+                                "infoEmpty": "Kayıt bulunamadı",
+                                "infoFiltered": "(filtered from _MAX_ total records)",
+                                "paginate": {
+                                    "first":      "İlk",
+                                    "last":       "Son",
+                                    "next":       "Sonraki",
+                                    "previous":   "Önceki"
+                                },
+                            },
+                            "order": [[ 3, "desc" ]],
+                            "pageLength": 10,
+                            "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "All"]]
+                        }
+                    );
+                }
+        }, 500);
+
+        setTimeout(() => {
+
+            var isDataTable = $.fn.DataTable.isDataTable('#reportTable3');
+
+            if (!isDataTable) {
+                $('#reportTable3').DataTable(
+                    {
+                        "language": {
+                            "search":"Ara:",
+                            "lengthMenu": "Sayfada _MENU_ kayıt gösteriliyor",
+                            "zeroRecords": "Kayıt bulunamadı",
+                            "info": "Sayfa _PAGE_ / _PAGES_",
+                            "infoEmpty": "Kayıt bulunamadı",
+                            "infoFiltered": "(filtered from _MAX_ total records)",
+                            "paginate": {
+                                "first":      "İlk",
+                                "last":       "Son",
+                                "next":       "Sonraki",
+                                "previous":   "Önceki"
+                            },
+                        },
+                        "order": [[ 3, "desc" ]],
+                        "pageLength": 10,
+                        "lengthMenu": [[10, 25, 50, -1], [10, 25, 50, "All"]]
+                    }
+                );
+            }
+    }, 500);
+
             this.selectedOption = index;
         },
 

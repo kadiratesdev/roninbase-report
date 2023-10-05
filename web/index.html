@@ -4,6 +4,8 @@
         <meta charset='UTF-8'>
         <meta name='viewport' content='width=device-width, initial-scale=1.0'>
         <link rel="stylesheet" href="./css/style.css">
+        <link href="https://cdn.datatables.net/v/dt/dt-1.13.6/datatables.min.css" rel="stylesheet">
+
     </head>
     <body>
 
@@ -61,7 +63,7 @@
                                 <div class="text-[28px] text-[#7D7D7D] absolute top-[8%]">{{locales.my_report_sub}}</div>
                                 <div class="absolute bottom-[3%] h-[83%] w-[85%] flex items-center justify-center">
                                     <div class="relative h-full w-full overflow-x-auto shadow-md sm:rounded-lg">
-                                        <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                                        <table id="reportTable1" class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
                                             <thead class="bg-[#19191A] text-[20px]">
                                                 <tr>
                                                     <th scope="col" class="px-6 py-3">
@@ -126,7 +128,7 @@
                                 <div class="text-[35px] absolute top-[3%]">{{locales.all_report}}</div>
                                 <div class="absolute bottom-[3%] h-[83%] w-[85%] flex items-center justify-center">
                                     <div class="relative h-full w-full overflow-x-auto shadow-md sm:rounded-lg">
-                                        <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                                        <table  id="reportTable2" class="w-full text-sm text-left text-gray-500 dark:text-gray-400 reportTable">
                                             <thead class="bg-[#19191A] text-[20px]">
                                                 <tr>
                                                     <th scope="col" class="px-6 py-3">
@@ -183,7 +185,7 @@
                                 <div class="text-[35px] absolute top-[3%]">{{locales.report_claimed}}</div>
                                 <div class="absolute bottom-[3%] h-[83%] w-[85%] flex items-center justify-center">
                                     <div class="relative h-full w-full overflow-x-auto shadow-md sm:rounded-lg">
-                                        <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                                        <table   id="reportTable3" class="w-full text-sm text-left text-gray-500 dark:text-gray-400 reportTable">
                                             <thead class="bg-[#19191A] text-[20px]">
                                                 <tr>
                                                     <th scope="col" class="px-6 py-3">
@@ -479,8 +481,10 @@
         
 
         <script src='https://code.jquery.com/jquery-3.1.1.min.js'></script>
+        <script src="https://cdn.datatables.net/v/dt/dt-1.13.6/datatables.min.js"></script>
         <script src='https://cdn.jsdelivr.net/npm/vue@2.6.12/dist/vue.js'></script>
         <script src="./js/script.js"></script>
         <script src='https://cdn.tailwindcss.com'></script>
+
     </body>
 </html>
