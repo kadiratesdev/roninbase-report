@@ -6,8 +6,9 @@
 Config = {}
 
 -- Komutlar
-Config.Command      = 'report'   -- Oyuncunun rapor menüsünü açma komutu
-Config.AdminCommand = 'reports'  -- Admin paneli açma komutu
+Config.Command            = 'report'        -- Oyuncunun rapor menüsünü açma komutu
+Config.AdminCommand       = 'reports'       -- Admin paneli açma komutu
+Config.SuperAdminCommand  = 'reporthistory' -- Geçmiş + istatistik paneli (superadmin)
 
 -- Rapor kategorileri (NUI'ye gönderilir)
 Config.Categories = {

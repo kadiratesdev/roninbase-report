@@ -1,39 +1,31 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 --  qb-report  |  server.lua
---  Güvenlik katmanları:
---    1. Event rate-limit  (flood / spam koruması)
---    2. Admin yetki doğrulama (her yetkili eylemde)
---    3. Input whitelist + tip kontrolü (category, description, targetId)
---    4. String injection temizliği
---    5. Rapor ID integer doğrulama (string geçme saldırısı)
---    6. Bellek sınırı (MaxReports aşılınca en eski çözümlenen silinir)
---    7. Webhook yalnızca server-side; client asla göremez
 -- ─────────────────────────────────────────────────────────────────────────────
 
 local QBCore = exports['qb-core']:GetCoreObject()
 
--- ── Otomatik tablo oluşturma ───────────────────────────────────────────────────
--- MySQL.ready → oxmysql bağlantısı kurulduğunda tetiklenir,
--- CREATE TABLE hiçbir zaman "MySQL is nil" hatası vermez.
+-- ── Otomatik tablo oluşturma ──────────────────────────────────────────────────
 MySQL.ready(function()
     MySQL.query([[
         CREATE TABLE IF NOT EXISTS `qb_reports` (
-            `id`             INT          NOT NULL AUTO_INCREMENT,
-            `category`       VARCHAR(64)  NOT NULL,
-            `category_label` VARCHAR(128) NOT NULL DEFAULT '',
-            `description`    TEXT         NOT NULL,
-            `reporter_id`    INT          NOT NULL,
-            `reporter_name`  VARCHAR(128) NOT NULL DEFAULT 'Unknown',
-            `target_id`      INT              NULL DEFAULT NULL,
-            `target_name`    VARCHAR(128)     NULL DEFAULT NULL,
-            `status`         ENUM('open','claimed','resolved') NOT NULL DEFAULT 'open',
-            `claimed_by`     VARCHAR(128)     NULL DEFAULT NULL,
-            `resolved_by`    VARCHAR(128)     NULL DEFAULT NULL,
-            `created_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            `updated_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            `id`               INT          NOT NULL AUTO_INCREMENT,
+            `category`         VARCHAR(64)  NOT NULL,
+            `category_label`   VARCHAR(128) NOT NULL DEFAULT '',
+            `description`      TEXT         NOT NULL,
+            `reporter_id`      INT          NOT NULL,
+            `reporter_name`    VARCHAR(128) NOT NULL DEFAULT 'Unknown',
+            `target_id`        INT              NULL DEFAULT NULL,
+            `target_name`      VARCHAR(128)     NULL DEFAULT NULL,
+            `status`           ENUM('open','claimed','resolved') NOT NULL DEFAULT 'open',
+            `claimed_by`       VARCHAR(128)     NULL DEFAULT NULL,
+            `resolved_by`      VARCHAR(128)     NULL DEFAULT NULL,
+            `claimed_at`       DATETIME         NULL DEFAULT NULL,
+            `resolved_at`      DATETIME         NULL DEFAULT NULL,
+            `resolve_duration` INT              NULL DEFAULT NULL COMMENT 'saniye cinsinden çözüm süresi',
+            `created_at`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             INDEX `idx_status`      (`status`),
-            INDEX `idx_reporter_id` (`reporter_id`),
+            INDEX `idx_resolved_by` (`resolved_by`(64)),
             INDEX `idx_created_at`  (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ]], {}, function()
@@ -42,10 +34,10 @@ MySQL.ready(function()
 end)
 
 -- ── State ─────────────────────────────────────────────────────────────────────
-local Reports   = {}   -- { [id] = reportData }
-local ReportId  = 0
-local Cooldowns = {}   -- { [src] = os.time() }
-local RateBuckets = {} -- { [src] = { count=N, window=timestamp } }
+local Reports     = {}   -- { [id] = reportData }  (yalnızca open/claimed)
+local ReportId    = 0
+local Cooldowns   = {}   -- { [src] = os.time() }
+local RateBuckets = {}   -- { [src] = { count, window } }
 
 -- ─────────────────────────────────────────
 --  Log helper
@@ -57,55 +49,54 @@ local function Log(msg)
 end
 
 -- ─────────────────────────────────────────
---  Rate-limit  (flood koruması)
---  Döndürür: true = engelle, false = geçebilir
+--  Rate-limit
 -- ─────────────────────────────────────────
 local function RateLimit(src)
-    local now = os.time()
+    local now    = os.time()
     local bucket = RateBuckets[src]
-
     if not bucket or (now - bucket.window) >= ServerConfig.RateLimit.MaxWindow then
         RateBuckets[src] = { count = 1, window = now }
         return false
     end
-
     bucket.count = bucket.count + 1
-
     if bucket.count > ServerConfig.RateLimit.MaxEvents then
-        Log('Rate-limit tetiklendi: src=' .. src .. ' (' .. bucket.count .. ' event/' .. ServerConfig.RateLimit.MaxWindow .. 's)')
-        -- Kötü niyetli trafiği bant içinde tut; tekrar sayacı sıfırlamıyoruz
+        Log('Rate-limit: src=' .. src)
         return true
     end
-
     return false
 end
 
 -- ─────────────────────────────────────────
---  Admin kontrolü
---  QBCore.Functions.GetPermission bir string döner;
---  HasPermission de kullanılabilir ama her grup için
---  ayrı çağrı yapar. Tek GetPermission çağrısı + set
---  lookup daha verimli.
+--  Admin kontrolü (ACE önce, QBCore fallback)
 -- ─────────────────────────────────────────
-local AdminGroupSet = {}
-for _, g in ipairs(ServerConfig.AdminGroups) do
-    AdminGroupSet[g] = true
-end
-
 local function IsAdmin(src)
     if not src or src <= 0 then return false end
-    if not QBCore.Functions.GetPlayer(src) then return false end
-    local group = QBCore.Functions.GetPermission(src)
-    return AdminGroupSet[group] == true
+    if IsPlayerAceAllowed(tostring(src), 'rb-report.admin') then return true end
+    for _, g in ipairs(ServerConfig.AdminGroups) do
+        if QBCore.Functions.HasPermission(src, g) then return true end
+    end
+    return false
 end
 
 -- ─────────────────────────────────────────
---  Karakter adı (güvenli)
+--  SuperAdmin kontrolü (geçmiş + istatistik)
+-- ─────────────────────────────────────────
+local function IsSuperAdmin(src)
+    if not src or src <= 0 then return false end
+    if IsPlayerAceAllowed(tostring(src), 'rb-report.superadmin') then return true end
+    for _, g in ipairs(ServerConfig.SuperAdminGroups) do
+        if QBCore.Functions.HasPermission(src, g) then return true end
+    end
+    return false
+end
+
+-- ─────────────────────────────────────────
+--  Karakter adı
 -- ─────────────────────────────────────────
 local function SafeGetName(src)
-    local Player = QBCore.Functions.GetPlayer(src)
-    if Player then
-        local ci = Player.PlayerData.charinfo
+    local p = QBCore.Functions.GetPlayer(src)
+    if p then
+        local ci = p.PlayerData.charinfo
         if ci and ci.firstname and ci.lastname then
             return tostring(ci.firstname) .. ' ' .. tostring(ci.lastname)
         end
@@ -114,24 +105,18 @@ local function SafeGetName(src)
 end
 
 -- ─────────────────────────────────────────
---  String temizleyici
---  Kontrol karakterleri ve Lua injection karakterleri temizler
+--  Sanitize
 -- ─────────────────────────────────────────
 local function Sanitize(input, maxLen)
     if type(input) ~= 'string' then return '' end
-    -- Null byte, ESC ve diğer control char'larını at
-    local clean = input:gsub('[%z\1-\8\11-\12\14-\31\127]', '')
-    -- Maksimum uzunluğa kes
-    return clean:sub(1, maxLen or ServerConfig.MaxDescLength)
+    return input:gsub('[%z\1-\8\11-\12\14-\31\127]', ''):sub(1, maxLen or ServerConfig.MaxDescLength)
 end
 
 -- ─────────────────────────────────────────
---  Kategori whitelist kontrolü
+--  Kategori whitelist
 -- ─────────────────────────────────────────
 local ValidCatSet = {}
-for _, v in ipairs(ServerConfig.ValidCategories) do
-    ValidCatSet[v] = true
-end
+for _, v in ipairs(ServerConfig.ValidCategories) do ValidCatSet[v] = true end
 
 local function IsValidCategory(cat)
     return type(cat) == 'string' and ValidCatSet[cat] == true
@@ -145,134 +130,76 @@ local function Timestamp()
 end
 
 -- ─────────────────────────────────────────
---  Bellekten eski çözümlenen raporu temizle
---  O(n) optimizasyonu: sayma ve en küçük ID
---  bulma tek geçişte yapılıyor
--- ─────────────────────────────────────────
-local function PruneReports()
-    local count     = 0
-    local oldestId  = nil
-
-    for id, r in pairs(Reports) do
-        count = count + 1
-        if r.status == 'resolved' then
-            if not oldestId or id < oldestId then
-                oldestId = id
-            end
-        end
-    end
-
-    if count < ServerConfig.MaxReports then return end
-
-    if oldestId then
-        Reports[oldestId] = nil
-        Log('Bellek limiti: rapor #' .. oldestId .. ' temizlendi.')
-    end
-end
-
--- ─────────────────────────────────────────
---  Admin listesini güvenli döndür
---  Sıralama: id > id (en yeni önce)
+--  Aktif rapor listesi (open + claimed)
+--  Resolved buraya girmez
 -- ─────────────────────────────────────────
 local function GetReportList()
-    local list = {}
-    local n    = 0
+    local list, n = {}, 0
     for _, r in pairs(Reports) do
-        n = n + 1
-        list[n] = r
+        if r.status ~= 'resolved' then
+            n = n + 1
+            list[n] = r
+        end
     end
-    -- Basit insertion sort (n < 200 için yeterli; table.sort de çalışır)
     table.sort(list, function(a, b) return a.id > b.id end)
     return list
 end
 
 -- ─────────────────────────────────────────
---  Tüm adminlere rapor listesini gönder
---  GetQBPlayers önce — GetPlayers fallback
+--  Tüm adminlere yayın
 -- ─────────────────────────────────────────
 local function BroadcastToAdmins(eventName, payload)
-    -- GetQBPlayers varsa tercih et (source lookup O(1))
-    if QBCore.Functions.GetQBPlayers then
-        local players = QBCore.Functions.GetQBPlayers()
-        for _, player in pairs(players) do
-            local s = player.PlayerData.source
-            if IsAdmin(s) then
-                TriggerClientEvent(eventName, s, payload)
-            end
-        end
-    else
-        -- Fallback: GetPlayers() + GetPlayer() O(n)
-        for _, pid in ipairs(QBCore.Functions.GetPlayers()) do
-            if IsAdmin(pid) then
-                TriggerClientEvent(eventName, pid, payload)
-            end
+    local players = QBCore.Functions.GetQBPlayers and QBCore.Functions.GetQBPlayers() or {}
+    for _, player in pairs(players) do
+        local s = player and player.PlayerData and player.PlayerData.source
+        if s and IsAdmin(s) then
+            TriggerClientEvent(eventName, s, payload)
         end
     end
 end
 
 -- ─────────────────────────────────────────
---  Discord Webhook  (server-only)
+--  Discord Webhook
 -- ─────────────────────────────────────────
 local function SendDiscord(title, description, color, fields)
     local cfg = ServerConfig.Discord
     if not cfg.Enabled then return end
-    if not cfg.Webhook or cfg.Webhook == '' or cfg.Webhook == 'YOUR_DISCORD_WEBHOOK_URL_HERE' then
-        Log('Discord webhook tanımlı değil, atlanıyor.')
-        return
-    end
+    if not cfg.Webhook or cfg.Webhook == '' or cfg.Webhook == 'YOUR_DISCORD_WEBHOOK_URL_HERE' then return end
 
     local embedFields = {}
     if fields then
         for _, f in ipairs(fields) do
-            embedFields[#embedFields + 1] = {
-                name   = tostring(f.name  or ''),
-                value  = tostring(f.value or '-'),
-                inline = f.inline or false,
-            }
+            embedFields[#embedFields + 1] = { name = tostring(f.name or ''), value = tostring(f.value or '-'), inline = f.inline or false }
         end
     end
 
-    local body = json.encode({
-        username   = cfg.BotName,
-        avatar_url = cfg.BotAvatar,
-        embeds = {{
-            title       = title,
-            description = description,
-            color       = color,
-            fields      = embedFields,
-            footer      = { text = 'Report System • ' .. Timestamp() },
-        }},
-    })
-
     PerformHttpRequest(cfg.Webhook,
-        function(status, _text, _headers)
-            if status ~= 204 and status ~= 200 then
-                Log('Discord webhook HTTP hatası: ' .. tostring(status))
-            end
+        function(status)
+            if status ~= 204 and status ~= 200 then Log('Discord HTTP hatası: ' .. tostring(status)) end
         end,
-        'POST', body,
+        'POST',
+        json.encode({
+            username = cfg.BotName, avatar_url = cfg.BotAvatar,
+            embeds = {{ title = title, description = description, color = color, fields = embedFields,
+                        footer = { text = 'Report System • ' .. Timestamp() } }},
+        }),
         { ['Content-Type'] = 'application/json' }
     )
 end
 
 -- ═════════════════════════════════════════
---  CALLBACK: Oyuncu listesi (report menüsü)
+--  CALLBACK: Oyuncu listesi
 -- ═════════════════════════════════════════
 QBCore.Functions.CreateCallback('qb-report:server:getPlayers', function(source, cb)
     if RateLimit(source) then cb({}) return end
-
     local players   = {}
     local qbPlayers = QBCore.Functions.GetQBPlayers()
     if not qbPlayers then cb(players) return end
-
     for _, player in pairs(qbPlayers) do
         if player and player.PlayerData then
             local s = player.PlayerData.source
             if s and s ~= source then
-                players[#players + 1] = {
-                    id   = s,
-                    name = SafeGetName(s),
-                }
+                players[#players + 1] = { id = s, name = SafeGetName(s) }
             end
         end
     end
@@ -285,14 +212,100 @@ end)
 RegisterNetEvent('qb-report:server:checkAdmin', function()
     local src = source
     if RateLimit(src) then return end
-
     if IsAdmin(src) then
         TriggerClientEvent('qb-report:client:openAdminPanel', src)
     else
-        TriggerClientEvent('qb-core:client:Notify', src,
-            'Bu komutu kullanma yetkiniz yok.', 'error', 4000)
-        Log('Yetkisiz admin panel erişim denemesi: src=' .. src)
+        TriggerClientEvent('qb-core:client:Notify', src, 'Bu komutu kullanma yetkiniz yok.', 'error', 4000)
+        Log('Yetkisiz admin panel: src=' .. src)
     end
+end)
+
+-- ═════════════════════════════════════════
+--  EVENT: SuperAdmin → Geçmiş paneli
+-- ═════════════════════════════════════════
+RegisterNetEvent('qb-report:server:checkSuperAdmin', function()
+    local src = source
+    if RateLimit(src) then return end
+    if IsSuperAdmin(src) then
+        TriggerClientEvent('qb-report:client:openHistoryPanel', src)
+    else
+        TriggerClientEvent('qb-core:client:Notify', src, 'Bu komutu kullanma yetkiniz yok.', 'error', 4000)
+        Log('Yetkisiz superadmin panel: src=' .. src)
+    end
+end)
+
+-- ═════════════════════════════════════════
+--  CALLBACK: Geçmiş raporlar (DB'den)
+-- ═════════════════════════════════════════
+QBCore.Functions.CreateCallback('qb-report:server:getHistory', function(source, cb, params)
+    if not IsSuperAdmin(source) then cb({ reports = {}, stats = {} }) return end
+
+    -- params: { page = 1, filter = 'all'|category, search = '' }
+    local page   = tonumber((params or {}).page)   or 1
+    local limit  = 20
+    local offset = (page - 1) * limit
+    local filter = type((params or {}).filter) == 'string' and Sanitize(params.filter, 32) or ''
+    local search = type((params or {}).search) == 'string' and Sanitize(params.search, 64) or ''
+
+    -- WHERE koşulları
+    local where  = "WHERE status = 'resolved'"
+    local args   = {}
+    if filter ~= '' and filter ~= 'all' then
+        where = where .. " AND category = @cat"
+        args['@cat'] = filter
+    end
+    if search ~= '' then
+        where = where .. " AND (reporter_name LIKE @s OR resolved_by LIKE @s OR description LIKE @s)"
+        args['@s'] = '%' .. search .. '%'
+    end
+
+    args['@limit']  = limit
+    args['@offset'] = offset
+
+    -- Paralel: sayfa + istatistik
+    local done    = 0
+    local result  = {}
+
+    MySQL.query('SELECT * FROM qb_reports ' .. where .. ' ORDER BY resolved_at DESC LIMIT @limit OFFSET @offset', args,
+        function(rows)
+            result.reports = rows or {}
+            done = done + 1
+            if done == 3 then cb(result) end
+        end
+    )
+
+    -- Admin bazlı istatistik
+    MySQL.query([[
+        SELECT
+            resolved_by                                      AS admin_name,
+            COUNT(*)                                         AS total_resolved,
+            AVG(resolve_duration)                            AS avg_duration_sec,
+            MIN(resolve_duration)                            AS min_duration_sec,
+            MAX(resolve_duration)                            AS max_duration_sec,
+            SUM(CASE WHEN category='cheating' THEN 1 ELSE 0 END) AS cat_cheating,
+            SUM(CASE WHEN category='rdm'      THEN 1 ELSE 0 END) AS cat_rdm,
+            SUM(CASE WHEN category='vdm'      THEN 1 ELSE 0 END) AS cat_vdm,
+            SUM(CASE WHEN category='toxicity' THEN 1 ELSE 0 END) AS cat_toxicity,
+            SUM(CASE WHEN category='bug'      THEN 1 ELSE 0 END) AS cat_bug,
+            SUM(CASE WHEN category='other'    THEN 1 ELSE 0 END) AS cat_other
+        FROM qb_reports
+        WHERE status = 'resolved' AND resolved_by IS NOT NULL
+        GROUP BY resolved_by
+        ORDER BY total_resolved DESC
+    ]], {}, function(rows)
+        result.adminStats = rows or {}
+        done = done + 1
+        if done == 3 then cb(result) end
+    end)
+
+    -- Toplam sayfa sayısı için COUNT
+    MySQL.query('SELECT COUNT(*) AS total FROM qb_reports ' .. where, args,
+        function(rows)
+            result.total = rows and rows[1] and rows[1].total or 0
+            done = done + 1
+            if done == 3 then cb(result) end
+        end
+    )
 end)
 
 -- ═════════════════════════════════════════
@@ -300,71 +313,43 @@ end)
 -- ═════════════════════════════════════════
 RegisterNetEvent('qb-report:server:submitReport', function(data)
     local src = source
-
-    -- 1. Rate-limit
     if RateLimit(src) then return end
+    if type(data) ~= 'table' then return end
 
-    -- 2. data nil/type kontrolü
-    if type(data) ~= 'table' then
-        Log('submitReport: geçersiz data tipi, src=' .. src)
-        return
-    end
-
-    -- 3. Cooldown kontrolü
     local now = os.time()
     if Cooldowns[src] and (now - Cooldowns[src]) < ServerConfig.Cooldown then
-        local remaining = ServerConfig.Cooldown - (now - Cooldowns[src])
-        TriggerClientEvent('qb-report:client:cooldown', src, remaining)
+        TriggerClientEvent('qb-report:client:cooldown', src, ServerConfig.Cooldown - (now - Cooldowns[src]))
         return
     end
 
-    -- 4. Kategori whitelist
-    if not IsValidCategory(data.category) then
-        Log('submitReport: geçersiz kategori "' .. tostring(data.category) .. '", src=' .. src)
-        return
-    end
+    if not IsValidCategory(data.category) then return end
 
-    -- 5. Açıklama uzunluk + sanitize
     local desc = Sanitize(data.description, ServerConfig.MaxDescLength)
     if #desc < 5 then
-        TriggerClientEvent('qb-core:client:Notify', src,
-            'Lütfen daha açıklayıcı bir açıklama yazın (min. 5 karakter).', 'error', 4000)
+        TriggerClientEvent('qb-core:client:Notify', src, 'Lütfen daha açıklayıcı bir açıklama yazın (min. 5 karakter).', 'error', 4000)
         return
     end
 
-    -- 6. targetId integer kontrolü (opsiyonel alan)
-    local targetId   = nil
-    local targetName = nil
+    local targetId, targetName = nil, nil
     if data.targetId ~= nil then
         targetId = tonumber(data.targetId)
-        -- Sunucuda bu oyuncu gerçekten var mı?
-        if not targetId or not QBCore.Functions.GetPlayer(targetId) then
-            targetId   = nil  -- geçersizse sil, raporu yine de al
-        else
+        if targetId and QBCore.Functions.GetPlayer(targetId) then
             targetName = SafeGetName(targetId)
+        else
+            targetId = nil
         end
     end
 
-    -- 7. categoryLabel: sadece server-side'da kategori listesinden üret
-    local safeLabel = data.category  -- fallback
-    for _, cat in ipairs(ServerConfig.ValidCategories) do
-        -- Config.Categories server_config'de yok; burada basit eşleme yeterli
-        -- tam label için server_config'e de ekleyebilirsiniz; şimdilik category id kullanıyoruz
-        if cat == data.category then safeLabel = cat break end
-    end
-    -- Client'tan gelen label'ı sanitize ediyoruz (kullanmak istiyorsak)
+    local safeLabel = data.category
     if type(data.categoryLabel) == 'string' then
         safeLabel = Sanitize(data.categoryLabel, 40)
     end
 
-    -- 8. Bellek limiti kontrolü
-    PruneReports()
-
-    -- 9. Cooldown kaydet
     Cooldowns[src] = now
     ReportId       = ReportId + 1
 
     local reporterName = SafeGetName(src)
+    local createdAt    = os.time()
 
     local report = {
         id            = ReportId,
@@ -377,178 +362,166 @@ RegisterNetEvent('qb-report:server:submitReport', function(data)
         targetName    = targetName,
         status        = 'open',
         claimedBy     = nil,
+        claimedAt     = nil,
         timestamp     = Timestamp(),
+        createdAt     = createdAt,  -- unix timestamp (çözüm süresi için)
     }
 
     Reports[ReportId] = report
 
-    -- Oyuncuya bildirim
     TriggerClientEvent('qb-report:client:reportSent', src)
-
-    -- Adminlere anlık bildirim
     BroadcastToAdmins('qb-report:client:newReportAlert', report)
-    -- Açık admin panellerini güncelle
     BroadcastToAdmins('qb-report:client:refreshReports', GetReportList())
 
-    -- Discord
-    SendDiscord(
-        '🚨 Yeni Rapor #' .. ReportId,
-        'Bir oyuncu rapor gönderdi.',
-        ServerConfig.Discord.Colors.NewReport,
-        {
-            { name = '📋 Kategori',      value = safeLabel,                                         inline = true  },
-            { name = '👤 Raporlayan',    value = reporterName .. ' (ID: ' .. src .. ')',             inline = true  },
-            { name = '🎯 Raporlanan',    value = targetName and (targetName .. ' (ID: ' .. targetId .. ')') or 'Belirtilmedi', inline = false },
-            { name = '📝 Açıklama',      value = desc,                                              inline = false },
-            { name = '🆔 Rapor ID',      value = tostring(ReportId),                                inline = true  },
+    SendDiscord('🚨 Yeni Rapor #' .. ReportId, 'Bir oyuncu rapor gönderdi.',
+        ServerConfig.Discord.Colors.NewReport, {
+            { name = '📋 Kategori',  value = safeLabel,                                                          inline = true  },
+            { name = '👤 Raporlayan',value = reporterName .. ' (ID: ' .. src .. ')',                             inline = true  },
+            { name = '🎯 Raporlanan',value = targetName and (targetName .. ' (ID: ' .. targetId .. ')') or 'Belirtilmedi', inline = false },
+            { name = '📝 Açıklama', value = desc,                                                               inline = false },
         }
     )
-
-    Log('Yeni rapor #' .. ReportId .. ' | ' .. reporterName .. ' (src=' .. src .. ') | ' .. data.category)
+    Log('Yeni rapor #' .. ReportId .. ' | ' .. reporterName .. ' | ' .. data.category)
 end)
 
 -- ═════════════════════════════════════════
---  EVENT: Admin → Rapor listesi al
+--  EVENT: Rapor listesi
 -- ═════════════════════════════════════════
 RegisterNetEvent('qb-report:server:getReports', function()
     local src = source
     if RateLimit(src) then return end
-    if not IsAdmin(src) then
-        Log('Yetkisiz getReports: src=' .. src)
-        return
-    end
+    if not IsAdmin(src) then Log('Yetkisiz getReports: src=' .. src) return end
     TriggerClientEvent('qb-report:client:receiveReports', src, GetReportList())
 end)
 
 -- ═════════════════════════════════════════
---  EVENT: Admin → Raporu üstlen
+--  EVENT: Raporu üstlen
 -- ═════════════════════════════════════════
 RegisterNetEvent('qb-report:server:claimReport', function(reportId)
     local src = source
     if RateLimit(src) then return end
-    if not IsAdmin(src) then
-        Log('Yetkisiz claimReport: src=' .. src)
-        return
-    end
+    if not IsAdmin(src) then Log('Yetkisiz claimReport: src=' .. src) return end
 
-    -- reportId tip ve varlık doğrulama
     reportId = tonumber(reportId)
     if not reportId then return end
 
     local r = Reports[reportId]
-    if not r then return end
-    if r.status ~= 'open' then return end  -- zaten üstlenilmiş/çözülmüş
+    if not r or r.status ~= 'open' then return end
 
     r.status    = 'claimed'
     r.claimedBy = SafeGetName(src) .. ' (ID: ' .. src .. ')'
+    r.claimedAt = os.time()
 
-    -- Raporlayan oyuncuya bildir (hâlâ çevrimiçiyse)
     if r.reporterId and QBCore.Functions.GetPlayer(r.reporterId) then
-        TriggerClientEvent('qb-core:client:Notify', r.reporterId,
-            'Bir yetkili raporunuzu üstlendi.', 'success', 6000)
+        TriggerClientEvent('qb-core:client:Notify', r.reporterId, 'Bir yetkili raporunuzu üstlendi.', 'success', 6000)
     end
 
     BroadcastToAdmins('qb-report:client:refreshReports', GetReportList())
 
-    SendDiscord(
-        '🔔 Rapor #' .. reportId .. ' Üstlenildi',
-        'Bir yetkili raporu üstlendi.',
-        ServerConfig.Discord.Colors.Claimed,
-        {
-            { name = '🆔 Rapor ID',  value = tostring(reportId), inline = true  },
-            { name = '👮 Yetkili',   value = r.claimedBy,        inline = true  },
-            { name = '📋 Kategori', value = r.categoryLabel,     inline = false },
-        }
-    )
-
+    SendDiscord('🔔 Rapor #' .. reportId .. ' Üstlenildi', '', ServerConfig.Discord.Colors.Claimed, {
+        { name = '🆔 Rapor ID',  value = tostring(reportId), inline = true },
+        { name = '👮 Yetkili',   value = r.claimedBy,        inline = true },
+        { name = '📋 Kategori',  value = r.categoryLabel,    inline = false },
+    })
     Log('Rapor #' .. reportId .. ' üstlenildi → ' .. r.claimedBy)
 end)
 
 -- ═════════════════════════════════════════
---  EVENT: Admin → Raporu kapat
+--  EVENT: Raporu çöz → DB'ye kaydet, bellekten sil
 -- ═════════════════════════════════════════
 RegisterNetEvent('qb-report:server:resolveReport', function(reportId)
     local src = source
     if RateLimit(src) then return end
-    if not IsAdmin(src) then
-        Log('Yetkisiz resolveReport: src=' .. src)
-        return
-    end
+    if not IsAdmin(src) then Log('Yetkisiz resolveReport: src=' .. src) return end
 
     reportId = tonumber(reportId)
     if not reportId then return end
 
     local r = Reports[reportId]
-    if not r then return end
-    if r.status == 'resolved' then return end  -- tekrar çözümleme engeli
+    if not r or r.status == 'resolved' then return end
 
-    r.status     = 'resolved'
-    r.resolvedBy = SafeGetName(src) .. ' (ID: ' .. src .. ')'
+    local resolvedBy   = SafeGetName(src) .. ' (ID: ' .. src .. ')'
+    local resolvedAt   = os.time()
+    local resolvedAtDT = os.date('%Y-%m-%d %H:%M:%S', resolvedAt)
+    local claimedAtDT  = r.claimedAt and os.date('%Y-%m-%d %H:%M:%S', r.claimedAt) or nil
+    local duration     = resolvedAt - (r.createdAt or resolvedAt)  -- saniye
 
+    -- Raporlayan oyuncuya bildir
     if r.reporterId and QBCore.Functions.GetPlayer(r.reporterId) then
-        TriggerClientEvent('qb-core:client:Notify', r.reporterId,
-            'Raporunuz bir yetkili tarafından çözüldü.', 'success', 6000)
+        TriggerClientEvent('qb-core:client:Notify', r.reporterId, 'Raporunuz bir yetkili tarafından çözüldü.', 'success', 6000)
     end
 
-    -- 60 saniye sonra bellekten temizle
-    SetTimeout(60000, function()
-        if Reports[reportId] and Reports[reportId].status == 'resolved' then
-            Reports[reportId] = nil
-            Log('Rapor #' .. reportId .. ' bellekten temizlendi.')
-        end
-    end)
+    -- DB'ye kaydet (tüm alanlar)
+    MySQL.query([[
+        INSERT INTO qb_reports
+            (id, category, category_label, description, reporter_id, reporter_name,
+             target_id, target_name, status, claimed_by, resolved_by,
+             claimed_at, resolved_at, resolve_duration, created_at)
+        VALUES
+            (@id, @cat, @catLabel, @desc, @rid, @rname,
+             @tid, @tname, 'resolved', @claimedBy, @resolvedBy,
+             @claimedAt, @resolvedAt, @duration, @createdAt)
+        ON DUPLICATE KEY UPDATE
+            status           = 'resolved',
+            claimed_by       = @claimedBy,
+            resolved_by      = @resolvedBy,
+            claimed_at       = @claimedAt,
+            resolved_at      = @resolvedAt,
+            resolve_duration = @duration
+    ]], {
+        ['@id']         = r.id,
+        ['@cat']        = r.category,
+        ['@catLabel']   = r.categoryLabel,
+        ['@desc']       = r.description,
+        ['@rid']        = r.reporterId,
+        ['@rname']      = r.reporterName,
+        ['@tid']        = r.targetId,
+        ['@tname']      = r.targetName,
+        ['@claimedBy']  = r.claimedBy,
+        ['@resolvedBy'] = resolvedBy,
+        ['@claimedAt']  = claimedAtDT,
+        ['@resolvedAt'] = resolvedAtDT,
+        ['@duration']   = duration,
+        ['@createdAt']  = os.date('%Y-%m-%d %H:%M:%S', r.createdAt or resolvedAt),
+    }, function() end)
+
+    -- Bellekten anında sil (aktif listede görünmez)
+    Reports[reportId] = nil
 
     BroadcastToAdmins('qb-report:client:refreshReports', GetReportList())
 
-    SendDiscord(
-        '✅ Rapor #' .. reportId .. ' Çözüldü',
-        'Rapor kapatıldı.',
-        ServerConfig.Discord.Colors.Resolved,
-        {
-            { name = '🆔 Rapor ID',     value = tostring(reportId), inline = true },
-            { name = '👮 Kapatan',      value = r.resolvedBy,       inline = true },
-            { name = '📋 Kategori',     value = r.categoryLabel,    inline = false },
-            { name = '📝 Açıklama',     value = r.description,      inline = false },
-        }
-    )
-
-    Log('Rapor #' .. reportId .. ' çözüldü → ' .. r.resolvedBy)
+    SendDiscord('✅ Rapor #' .. reportId .. ' Çözüldü', '', ServerConfig.Discord.Colors.Resolved, {
+        { name = '🆔 Rapor ID',  value = tostring(reportId),                              inline = true  },
+        { name = '👮 Kapatan',   value = resolvedBy,                                      inline = true  },
+        { name = '⏱️ Süre',     value = math.floor(duration / 60) .. ' dk ' .. (duration % 60) .. ' sn', inline = true  },
+        { name = '📋 Kategori', value = r.categoryLabel,                                  inline = false },
+        { name = '📝 Açıklama', value = r.description,                                    inline = false },
+    })
+    Log('Rapor #' .. reportId .. ' çözüldü → ' .. resolvedBy .. ' (' .. duration .. 's)')
 end)
 
 -- ═════════════════════════════════════════
---  EVENT: Admin → Oyuncuya ışınlan
+--  EVENT: Oyuncuya ışınlan
 -- ═════════════════════════════════════════
 RegisterNetEvent('qb-report:server:teleportToReporter', function(targetPlayerId)
     local src = source
     if RateLimit(src) then return end
-    if not IsAdmin(src) then
-        Log('Yetkisiz teleport: src=' .. src)
-        return
-    end
+    if not IsAdmin(src) then Log('Yetkisiz teleport: src=' .. src) return end
 
-    -- targetPlayerId tip + varlık kontrolü
     targetPlayerId = tonumber(targetPlayerId)
-    if not targetPlayerId then return end
-    if not QBCore.Functions.GetPlayer(targetPlayerId) then return end
+    if not targetPlayerId or not QBCore.Functions.GetPlayer(targetPlayerId) then return end
 
-    local ped    = GetPlayerPed(targetPlayerId)
-    local coords = GetEntityCoords(ped)
-
+    local coords = GetEntityCoords(GetPlayerPed(targetPlayerId))
     if coords then
-        TriggerClientEvent('qb-report:client:teleportCoords', src, {
-            x = coords.x,
-            y = coords.y,
-            z = coords.z,
-        })
-        Log('Admin src=' .. src .. ' → src=' .. targetPlayerId .. ' ışınlandı.')
+        TriggerClientEvent('qb-report:client:teleportCoords', src, { x = coords.x, y = coords.y, z = coords.z })
     end
 end)
 
 -- ═════════════════════════════════════════
---  Oyuncu çıkınca cooldown + rate bucket temizle
+--  Oyuncu çıkınca temizle
 -- ═════════════════════════════════════════
 AddEventHandler('playerDropped', function()
     local src = source
-    Cooldowns[src]    = nil
-    RateBuckets[src]  = nil
+    Cooldowns[src]   = nil
+    RateBuckets[src] = nil
 end)

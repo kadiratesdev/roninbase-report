@@ -4,563 +4,260 @@
    QBCore Report System – NUI JavaScript Logic
 ═══════════════════════════════════════════════════════ */
 
-// ─────────────────────────────────────────
-//  State
-// ─────────────────────────────────────────
 const State = {
-    selectedCategory:      null,
-    selectedCategoryLabel: null,
-    selectedPlayer:        null,
-    allPlayers:            [],
-    allReports:            [],
-    activeFilter:          'all',
-    isLoading:             false,
-    pendingAction:         null,
+    selectedCategory: null, selectedCategoryLabel: null, selectedPlayer: null,
+    allPlayers: [], allReports: [], activeFilter: 'all',
+    isLoading: false, pendingAction: null,
+    historyPage: 1, historyTotal: 0, historyFilter: 'all', historySearch: '', historyPageSize: 20,
 };
 
-// ─────────────────────────────────────────
-//  DOM References
-// ─────────────────────────────────────────
 const $id = id => document.getElementById(id);
 
-const reportOverlay      = $id('report-overlay');
-const categoryGrid       = $id('category-grid');
-const playerSearch       = $id('player-search');
-const playerList         = $id('player-list');
-const selectedPlayerDiv  = $id('selected-player-display');
-const selectedPlayerName = $id('selected-player-name');
-const clearPlayerBtn     = $id('clear-player');
-const reportDesc         = $id('report-description');
-const charCount          = $id('char-count');
-const submitBtn          = $id('submit-report');
+const reportOverlay = $id('report-overlay'), categoryGrid = $id('category-grid'),
+      playerSearch = $id('player-search'), playerList = $id('player-list'),
+      selectedPlayerDiv = $id('selected-player-display'), selectedPlayerName = $id('selected-player-name'),
+      clearPlayerBtn = $id('clear-player'), reportDesc = $id('report-description'),
+      charCount = $id('char-count'), submitBtn = $id('submit-report'),
+      adminOverlay = $id('admin-overlay'), reportListEl = $id('report-list'),
+      emptyState = $id('empty-state'), statTotal = $id('stat-total'),
+      statOpen = $id('stat-open'), statClaimed = $id('stat-claimed'),
+      historyOverlay = $id('history-overlay'), historyList = $id('history-list'),
+      historyEmpty = $id('history-empty'), historyPageInfo = $id('history-page-info'),
+      historySearchEl = $id('history-search'), historyFilterEl = $id('history-filter'),
+      statsSummary = $id('stats-summary'), statsTbody = $id('stats-tbody'),
+      toastContainer = $id('toast-container'), confirmOverlay = $id('confirm-overlay'),
+      confirmMessage = $id('confirm-message'), confirmOkBtn = $id('confirm-ok'),
+      confirmCancelBtn = $id('confirm-cancel'), loadingSpinner = $id('loading-spinner');
 
-const adminOverlay   = $id('admin-overlay');
-const reportListEl   = $id('report-list');
-const emptyState     = $id('empty-state');
-const statTotal      = $id('stat-total');
-const statOpen       = $id('stat-open');
-const statClaimed    = $id('stat-claimed');
-const statResolved   = $id('stat-resolved');
+function debounce(fn, delay) { let t; return function(...a){ clearTimeout(t); t=setTimeout(()=>fn.apply(this,a),delay); }; }
+function setLoading(v) { State.isLoading=v; if(loadingSpinner) loadingSpinner.classList.toggle('hidden',!v); }
 
-const toastContainer   = $id('toast-container');
-const confirmOverlay   = $id('confirm-overlay');
-const confirmMessage   = $id('confirm-message');
-const confirmOkBtn     = $id('confirm-ok');
-const confirmCancelBtn = $id('confirm-cancel');
-const loadingSpinner   = $id('loading-spinner');
-
-// ─────────────────────────────────────────
-//  Debounce
-// ─────────────────────────────────────────
-function debounce(fn, delay) {
-    let timer;
-    return function (...args) {
-        clearTimeout(timer);
-        timer = setTimeout(() => fn.apply(this, args), delay);
-    };
+function showToast(msg, type='info', dur=4000) {
+    const icons={success:'fa-circle-check',error:'fa-circle-xmark',info:'fa-circle-info',warning:'fa-triangle-exclamation'};
+    const t=document.createElement('div'); t.className=`toast toast-${type}`;
+    t.innerHTML=`<i class="fas ${icons[type]||icons.info} toast-icon"></i><span class="toast-text">${escapeHtml(msg)}</span>`;
+    toastContainer.appendChild(t);
+    setTimeout(()=>{ t.classList.add('toast-out'); t.addEventListener('animationend',()=>t.remove(),{once:true}); },dur);
 }
 
-// ─────────────────────────────────────────
-//  Loading spinner
-// ─────────────────────────────────────────
-function setLoading(visible) {
-    State.isLoading = visible;
-    if (loadingSpinner) loadingSpinner.classList.toggle('hidden', !visible);
+function showConfirm(msg, cb) {
+    if(!confirmOverlay){cb();return;} confirmMessage.textContent=msg;
+    confirmOverlay.classList.remove('hidden'); State.pendingAction=cb;
+}
+confirmOkBtn.addEventListener('click',()=>{ confirmOverlay.classList.add('hidden'); if(typeof State.pendingAction==='function') State.pendingAction(); State.pendingAction=null; });
+confirmCancelBtn.addEventListener('click',()=>{ confirmOverlay.classList.add('hidden'); State.pendingAction=null; });
+
+function nuiPost(action, data={}) {
+    const n=(typeof window.GetParentResourceName==='function')?window.GetParentResourceName():'qb-report';
+    return fetch(`https://${n}/${action}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(()=>{});
 }
 
-// ─────────────────────────────────────────
-//  Toast
-// ─────────────────────────────────────────
-function showToast(message, type = 'info', duration = 4000) {
-    const icons = {
-        success: 'fa-circle-check',
-        error:   'fa-circle-xmark',
-        info:    'fa-circle-info',
-        warning: 'fa-triangle-exclamation',
-    };
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.innerHTML = `
-        <i class="fas ${icons[type] || icons.info} toast-icon"></i>
-        <span class="toast-text">${escapeHtml(message)}</span>`;
-    toastContainer.appendChild(toast);
-    setTimeout(() => {
-        toast.classList.add('toast-out');
-        toast.addEventListener('animationend', () => toast.remove(), { once: true });
-    }, duration);
+function escapeHtml(s) {
+    if(s==null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-// ─────────────────────────────────────────
-//  Confirm dialog
-// ─────────────────────────────────────────
-function showConfirm(message, onConfirm) {
-    if (!confirmOverlay) { onConfirm(); return; }
-    confirmMessage.textContent = message;
-    confirmOverlay.classList.remove('hidden');
-    State.pendingAction = onConfirm;
+function fmtDuration(sec) {
+    if(sec==null||sec<0) return '—';
+    sec=Math.round(Number(sec)); const m=Math.floor(sec/60),s=sec%60;
+    return m===0?`${s}s`:`${m}m ${s}s`;
 }
 
-confirmOkBtn.addEventListener('click', () => {
-    confirmOverlay.classList.add('hidden');
-    if (typeof State.pendingAction === 'function') {
-        State.pendingAction();
-    }
-    State.pendingAction = null;
-});
+function validateForm() { submitBtn.disabled=!(!!State.selectedCategory&&reportDesc.value.trim().length>=5); }
 
-confirmCancelBtn.addEventListener('click', () => {
-    confirmOverlay.classList.add('hidden');
-    State.pendingAction = null;
-});
-
-// ─────────────────────────────────────────
-//  NUI post helper
-// ─────────────────────────────────────────
-function nuiPost(action, data = {}) {
-    const resourceName = (typeof window.GetParentResourceName === 'function')
-        ? window.GetParentResourceName()
-        : 'qb-report';
-    return fetch(`https://${resourceName}/${action}`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(data),
-    }).catch(() => { /* NUI dışı ortamda sessizce başarısız ol */ });
-}
-
-// ─────────────────────────────────────────
-//  XSS guard
-// ─────────────────────────────────────────
-function escapeHtml(str) {
-    if (str == null) return '';
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
-
-// ─────────────────────────────────────────
-//  Form validation
-// ─────────────────────────────────────────
-function validateForm() {
-    const hasCategory = !!State.selectedCategory;
-    const hasDesc     = reportDesc.value.trim().length >= 5;
-    submitBtn.disabled = !(hasCategory && hasDesc);
-}
-
-// ─────────────────────────────────────────
-//  Category grid
-// ─────────────────────────────────────────
-function buildCategories(categories) {
-    const fragment = document.createDocumentFragment();
-    categories.forEach(cat => {
-        const card = document.createElement('div');
-        card.className = 'cat-card';
-        card.dataset.id    = cat.id;
-        card.dataset.label = cat.label;
-        if (cat.color) card.style.setProperty('--cat-color', cat.color);
-        card.innerHTML = `
-            <div class="cat-check"><i class="fas fa-check"></i></div>
-            <span class="cat-icon">${escapeHtml(cat.icon || '📋')}</span>
-            <span class="cat-label">${escapeHtml(cat.label)}</span>`;
-        card.addEventListener('click', () => selectCategory(cat.id, cat.label, card));
-        fragment.appendChild(card);
+function buildCategories(cats) {
+    const f=document.createDocumentFragment();
+    cats.forEach(cat=>{
+        const c=document.createElement('div'); c.className='cat-card'; c.dataset.id=cat.id; c.dataset.label=cat.label;
+        if(cat.color) c.style.setProperty('--cat-color',cat.color);
+        c.innerHTML=`<div class="cat-check"><i class="fas fa-check"></i></div><span class="cat-icon">${escapeHtml(cat.icon||'📋')}</span><span class="cat-label">${escapeHtml(cat.label)}</span>`;
+        c.addEventListener('click',()=>selectCategory(cat.id,cat.label,c)); f.appendChild(c);
     });
-    categoryGrid.innerHTML = '';
-    categoryGrid.appendChild(fragment);
+    categoryGrid.innerHTML=''; categoryGrid.appendChild(f);
+}
+function selectCategory(id,label,el) {
+    categoryGrid.querySelectorAll('.cat-card').forEach(c=>c.classList.remove('selected')); el.classList.add('selected');
+    State.selectedCategory=id; State.selectedCategoryLabel=label; validateForm();
 }
 
-function selectCategory(id, label, cardEl) {
-    categoryGrid.querySelectorAll('.cat-card').forEach(c => c.classList.remove('selected'));
-    cardEl.classList.add('selected');
-    State.selectedCategory      = id;
-    State.selectedCategoryLabel = label;
-    validateForm();
-}
-
-// ─────────────────────────────────────────
-//  Player list
-// ─────────────────────────────────────────
-function buildPlayerList(players, filter = '') {
-    const lower    = filter.toLowerCase();
-    const filtered = filter
-        ? players.filter(p =>
-            p.name.toLowerCase().includes(lower) ||
-            String(p.id).includes(filter))
-        : players;
-
-    if (filtered.length === 0) {
-        playerList.innerHTML = '<div class="player-empty">No players found</div>';
-        return;
-    }
-
-    const fragment = document.createDocumentFragment();
-    filtered.forEach(player => {
-        const initials = player.name.split(' ')
-            .map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
-        const item = document.createElement('div');
-        item.className = 'player-item';
-        item.innerHTML = `
-            <div class="player-avatar">${escapeHtml(initials)}</div>
-            <div class="player-info">
-                <div class="player-name">${escapeHtml(player.name)}</div>
-                <div class="player-id">Server ID: ${player.id}</div>
-            </div>`;
-        item.addEventListener('click', () => selectPlayer(player));
-        fragment.appendChild(item);
+function buildPlayerList(players, filter='') {
+    const lo=filter.toLowerCase();
+    const filtered=filter?players.filter(p=>p.name.toLowerCase().includes(lo)||String(p.id).includes(filter)):players;
+    if(!filtered.length){playerList.innerHTML='<div class="player-empty">No players found</div>';return;}
+    const f=document.createDocumentFragment();
+    filtered.forEach(p=>{
+        const inits=p.name.split(' ').map(w=>w[0]||'').join('').slice(0,2).toUpperCase();
+        const item=document.createElement('div'); item.className='player-item';
+        item.innerHTML=`<div class="player-avatar">${escapeHtml(inits)}</div><div class="player-info"><div class="player-name">${escapeHtml(p.name)}</div><div class="player-id">Server ID: ${p.id}</div></div>`;
+        item.addEventListener('click',()=>selectPlayer(p)); f.appendChild(item);
     });
-    playerList.innerHTML = '';
-    playerList.appendChild(fragment);
+    playerList.innerHTML=''; playerList.appendChild(f);
 }
-
-function selectPlayer(player) {
-    State.selectedPlayer = player;
-    selectedPlayerName.textContent = `${player.name} (ID: ${player.id})`;
-    selectedPlayerDiv.classList.remove('hidden');
-    playerSearch.value   = '';
-    playerList.innerHTML = '';
+function selectPlayer(p) {
+    State.selectedPlayer=p; selectedPlayerName.textContent=`${p.name} (ID: ${p.id})`;
+    selectedPlayerDiv.classList.remove('hidden'); playerSearch.value=''; playerList.innerHTML='';
 }
+clearPlayerBtn.addEventListener('click',()=>{ State.selectedPlayer=null; selectedPlayerDiv.classList.add('hidden'); playerSearch.value=''; buildPlayerList(State.allPlayers); });
+playerSearch.addEventListener('input',debounce(()=>buildPlayerList(State.allPlayers,playerSearch.value),250));
 
-clearPlayerBtn.addEventListener('click', () => {
-    State.selectedPlayer = null;
-    selectedPlayerDiv.classList.add('hidden');
-    playerSearch.value = '';
-    buildPlayerList(State.allPlayers);
+reportDesc.addEventListener('input',()=>{ const l=reportDesc.value.length; charCount.textContent=l; charCount.style.color=l>450?'#ef4444':''; validateForm(); });
+
+submitBtn.addEventListener('click',()=>{
+    if(submitBtn.disabled||State.isLoading) return;
+    nuiPost('submitReport',{category:State.selectedCategory,categoryLabel:State.selectedCategoryLabel,description:reportDesc.value.trim(),targetId:State.selectedPlayer?State.selectedPlayer.id:null,targetName:State.selectedPlayer?State.selectedPlayer.name:null});
+    reportOverlay.classList.add('hidden'); resetReportForm(); showToast('Report submitted!','success');
 });
 
-// 250ms debounce: her tuş basışında DOM yeniden oluşturulmaz
-playerSearch.addEventListener('input', debounce(() => {
-    buildPlayerList(State.allPlayers, playerSearch.value);
-}, 250));
-
-// ─────────────────────────────────────────
-//  Character counter
-// ─────────────────────────────────────────
-reportDesc.addEventListener('input', () => {
-    const len = reportDesc.value.length;
-    charCount.textContent = len;
-    charCount.style.color = len > 450 ? '#ef4444' : '';
-    validateForm();
-});
-
-// ─────────────────────────────────────────
-//  Submit report
-// ─────────────────────────────────────────
-submitBtn.addEventListener('click', () => {
-    if (submitBtn.disabled || State.isLoading) return;
-
-    nuiPost('submitReport', {
-        category:      State.selectedCategory,
-        categoryLabel: State.selectedCategoryLabel,
-        description:   reportDesc.value.trim(),
-        targetId:      State.selectedPlayer ? State.selectedPlayer.id   : null,
-        targetName:    State.selectedPlayer ? State.selectedPlayer.name : null,
-    });
-
-    // closeReportModal nuiPost('closeReport') da çağırır — bunu istemiyoruz,
-    // sadece UI'yi sıfırla, NUI focus'u kaldır
-    reportOverlay.classList.add('hidden');
-    SetNuiFocus_safe(false);
-    resetReportForm();
-    showToast('Report submitted!', 'success');
-});
-
-// ─────────────────────────────────────────
-//  Close / reset helpers
-// ─────────────────────────────────────────
-
-// NUI dışı ortamda (tarayıcı testi) hata vermesin
-function SetNuiFocus_safe(state) {
-    // FiveM NUI'de bu bildirim Lua'ya gidiyor, doğrudan erişim yok
-    // Kapatma her zaman nuiPost üzerinden yapılıyor
+$id('close-report').addEventListener('click',closeReportModal);
+$id('cancel-report').addEventListener('click',closeReportModal);
+function closeReportModal(){reportOverlay.classList.add('hidden');nuiPost('closeReport');resetReportForm();}
+function resetReportForm(){
+    State.selectedCategory=null;State.selectedCategoryLabel=null;State.selectedPlayer=null;
+    categoryGrid.querySelectorAll('.cat-card').forEach(c=>c.classList.remove('selected'));
+    reportDesc.value='';charCount.textContent='0';playerSearch.value='';playerList.innerHTML='';
+    selectedPlayerDiv.classList.add('hidden');submitBtn.disabled=true;
 }
 
-$id('close-report').addEventListener('click', closeReportModal);
-$id('cancel-report').addEventListener('click', closeReportModal);
+$id('close-admin').addEventListener('click',closeAdminPanel);
+function closeAdminPanel(){adminOverlay.classList.add('hidden');nuiPost('closeAdmin');}
 
-function closeReportModal() {
-    reportOverlay.classList.add('hidden');
-    nuiPost('closeReport');
-    resetReportForm();
-}
+$id('close-history').addEventListener('click',closeHistoryPanel);
+function closeHistoryPanel(){historyOverlay.classList.add('hidden');nuiPost('closeHistory');}
 
-function resetReportForm() {
-    State.selectedCategory      = null;
-    State.selectedCategoryLabel = null;
-    State.selectedPlayer        = null;
-    categoryGrid.querySelectorAll('.cat-card').forEach(c => c.classList.remove('selected'));
-    reportDesc.value         = '';
-    charCount.textContent    = '0';
-    playerSearch.value       = '';
-    playerList.innerHTML     = '';
-    selectedPlayerDiv.classList.add('hidden');
-    submitBtn.disabled       = true;
-}
-
-$id('close-admin').addEventListener('click', closeAdminPanel);
-
-function closeAdminPanel() {
-    adminOverlay.classList.add('hidden');
-    nuiPost('closeAdmin');
-}
-
-// ─────────────────────────────────────────
-//  Admin: refresh
-// ─────────────────────────────────────────
-$id('refresh-reports').addEventListener('click', () => {
-    setLoading(true);
-    nuiPost('refreshReports').finally(() => setTimeout(() => setLoading(false), 800));
-    showToast('Refreshing reports...', 'info', 2000);
+$id('refresh-reports').addEventListener('click',()=>{
+    setLoading(true); nuiPost('refreshReports').finally(()=>setTimeout(()=>setLoading(false),800)); showToast('Refreshing...','info',2000);
 });
 
-// ─────────────────────────────────────────
-//  Admin: filter tabs
-// ─────────────────────────────────────────
-document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        State.activeFilter = btn.dataset.filter;
-        renderReports(State.allReports);
-    });
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{ document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); State.activeFilter=btn.dataset.filter; renderReports(State.allReports); });
 });
 
-// ─────────────────────────────────────────
-//  Admin: render reports (diff-based)
-// ─────────────────────────────────────────
 function renderReports(reports) {
-    State.allReports = reports;
-
-    // Stats
-    let open = 0, claimed = 0, resolved = 0;
-    for (let i = 0; i < reports.length; i++) {
-        const s = reports[i].status;
-        if      (s === 'open')     open++;
-        else if (s === 'claimed')  claimed++;
-        else if (s === 'resolved') resolved++;
-    }
-    statTotal.textContent    = reports.length;
-    statOpen.textContent     = open;
-    statClaimed.textContent  = claimed;
-    statResolved.textContent = resolved;
-
-    // Filter
-    const filtered = State.activeFilter === 'all'
-        ? reports
-        : reports.filter(r => r.status === State.activeFilter);
-
-    // Diff: mevcut kartları karşılaştır
-    const existingCards = reportListEl.querySelectorAll('.report-card');
-    const existingMap   = new Map();
-    existingCards.forEach(c => existingMap.set(Number(c.dataset.id), c));
-
-    const newIdSet = new Set(filtered.map(r => r.id));
-
-    // Artık gerekmeyenleri kaldır
-    existingMap.forEach((card, id) => {
-        if (!newIdSet.has(id)) card.remove();
+    State.allReports=reports;
+    let open=0,claimed=0;
+    reports.forEach(r=>{ if(r.status==='open') open++; else if(r.status==='claimed') claimed++; });
+    statTotal.textContent=reports.length; statOpen.textContent=open; statClaimed.textContent=claimed;
+    const filtered=State.activeFilter==='all'?reports:reports.filter(r=>r.status===State.activeFilter);
+    const em=new Map(); reportListEl.querySelectorAll('.report-card').forEach(c=>em.set(Number(c.dataset.id),c));
+    const ns=new Set(filtered.map(r=>r.id)); em.forEach((c,id)=>{if(!ns.has(id))c.remove();});
+    if(!filtered.length){emptyState.style.display='flex';return;} emptyState.style.display='none';
+    const f=document.createDocumentFragment(); let na=false;
+    filtered.forEach(r=>{
+        const ex=em.get(r.id);
+        if(ex){const b=ex.querySelector('.report-status-badge');if(b&&b.dataset.status!==r.status)ex.replaceWith(buildReportCard(r));}
+        else{f.appendChild(buildReportCard(r));na=true;}
     });
-
-    if (filtered.length === 0) {
-        emptyState.style.display = 'flex';
-        return;
-    }
-    emptyState.style.display = 'none';
-
-    const fragment = document.createDocumentFragment();
-    let needsAppend = false;
-
-    filtered.forEach(r => {
-        const existing = existingMap.get(r.id);
-        if (existing) {
-            // Sadece statü değiştiyse kartı yenile
-            const currentStatus = existing.querySelector('.report-status-badge')
-                ? existing.querySelector('.report-status-badge').dataset.status
-                : null;
-            if (currentStatus !== r.status) {
-                existing.replaceWith(buildReportCard(r));
-            }
-        } else {
-            fragment.appendChild(buildReportCard(r));
-            needsAppend = true;
-        }
-    });
-
-    if (needsAppend) reportListEl.appendChild(fragment);
+    if(na) reportListEl.appendChild(f);
 }
 
 function buildReportCard(r) {
-    const statusClass = {
-        open:     'badge-open',
-        claimed:  'badge-claimed',
-        resolved: 'badge-resolved',
-    }[r.status] || 'badge-open';
-
-    const statusLabel = r.status.charAt(0).toUpperCase() + r.status.slice(1);
-
-    const card = document.createElement('div');
-    card.className  = 'report-card';
-    card.dataset.id = r.id;
-
-    card.innerHTML = `
-        <div class="report-card-header">
-            <span class="report-id">#${r.id}</span>
-            <span class="report-category-badge">${escapeHtml(r.categoryLabel || r.category)}</span>
-            <span class="report-status-badge ${statusClass}" data-status="${r.status}">${statusLabel}</span>
-        </div>
-        <div class="report-card-body">
-            <div class="report-meta">
-                <span><i class="fas fa-user"></i> ${escapeHtml(r.reporterName)} (ID: ${r.reporterId})</span>
-                ${r.targetName ? `<span><i class="fas fa-crosshairs"></i> ${escapeHtml(r.targetName)} (ID: ${r.targetId})</span>` : ''}
-                <span><i class="fas fa-clock"></i> ${escapeHtml(r.timestamp)}</span>
-                ${r.claimedBy ? `<span><i class="fas fa-shield-halved"></i> ${escapeHtml(r.claimedBy)}</span>` : ''}
-            </div>
-            <div class="report-description">${escapeHtml(r.description)}</div>
-        </div>
-        <div class="report-card-actions">
-            ${r.status === 'open' ? `
-                <button class="btn btn-sm btn-yellow claim-btn" data-id="${r.id}">
-                    <i class="fas fa-hand-paper"></i> Claim
-                </button>` : ''}
-            ${r.status !== 'resolved' ? `
-                <button class="btn btn-sm btn-success resolve-btn" data-id="${r.id}">
-                    <i class="fas fa-check"></i> Resolve
-                </button>` : ''}
-            <button class="btn btn-sm btn-outline teleport-btn" data-player="${r.reporterId}">
-                <i class="fas fa-location-crosshairs"></i> Teleport to Reporter
-            </button>
-            ${r.targetId ? `
-                <button class="btn btn-sm btn-danger teleport-target-btn" data-player="${r.targetId}">
-                    <i class="fas fa-crosshairs"></i> Teleport to Reported
-                </button>` : ''}
-        </div>`;
-
-    const claimBtn = card.querySelector('.claim-btn');
-    if (claimBtn) {
-        claimBtn.addEventListener('click', () => {
-            showConfirm(`Claim report #${r.id}?`, () => {
-                nuiPost('claimReport', { reportId: r.id });
-                showToast(`Claimed report #${r.id}`, 'warning');
-            });
-        });
-    }
-
-    const resolveBtn = card.querySelector('.resolve-btn');
-    if (resolveBtn) {
-        resolveBtn.addEventListener('click', () => {
-            showConfirm(`Resolve report #${r.id}? Reporter will be notified.`, () => {
-                nuiPost('resolveReport', { reportId: r.id });
-                showToast(`Resolved report #${r.id}`, 'success');
-            });
-        });
-    }
-
-    const tpBtn = card.querySelector('.teleport-btn');
-    if (tpBtn) {
-        tpBtn.addEventListener('click', () => {
-            nuiPost('teleportToReporter', { playerId: parseInt(tpBtn.dataset.player) });
-            closeAdminPanel();
-            showToast('Teleporting to reporter...', 'info', 2500);
-        });
-    }
-
-    const tpTargetBtn = card.querySelector('.teleport-target-btn');
-    if (tpTargetBtn) {
-        tpTargetBtn.addEventListener('click', () => {
-            nuiPost('teleportToReporter', { playerId: parseInt(tpTargetBtn.dataset.player) });
-            closeAdminPanel();
-            showToast('Teleporting to reported player...', 'info', 2500);
-        });
-    }
-
+    const sc={open:'badge-open',claimed:'badge-claimed'}[r.status]||'badge-open';
+    const card=document.createElement('div'); card.className='report-card'; card.dataset.id=r.id;
+    card.innerHTML=`
+        <div class="report-card-header"><span class="report-id">#${r.id}</span><span class="report-category-badge">${escapeHtml(r.categoryLabel||r.category)}</span><span class="report-status-badge ${sc}" data-status="${r.status}">${r.status.charAt(0).toUpperCase()+r.status.slice(1)}</span></div>
+        <div class="report-card-body"><div class="report-meta"><span><i class="fas fa-user"></i> ${escapeHtml(r.reporterName)} (ID:${r.reporterId})</span>${r.targetName?`<span><i class="fas fa-crosshairs"></i> ${escapeHtml(r.targetName)}</span>`:''}<span><i class="fas fa-clock"></i> ${escapeHtml(r.timestamp)}</span>${r.claimedBy?`<span><i class="fas fa-shield-halved"></i> ${escapeHtml(r.claimedBy)}</span>`:''}</div><div class="report-description">${escapeHtml(r.description)}</div></div>
+        <div class="report-card-actions">${r.status==='open'?`<button class="btn btn-sm btn-yellow claim-btn" data-id="${r.id}"><i class="fas fa-hand-paper"></i> Claim</button>`:''}<button class="btn btn-sm btn-success resolve-btn" data-id="${r.id}"><i class="fas fa-check"></i> Resolve</button><button class="btn btn-sm btn-outline teleport-btn" data-player="${r.reporterId}"><i class="fas fa-location-crosshairs"></i> Teleport</button>${r.targetId?`<button class="btn btn-sm btn-danger teleport-target-btn" data-player="${r.targetId}"><i class="fas fa-crosshairs"></i> Tp Reported</button>`:''}</div>`;
+    const cb=card.querySelector('.claim-btn');
+    if(cb) cb.addEventListener('click',()=>showConfirm(`Claim report #${r.id}?`,()=>{nuiPost('claimReport',{reportId:r.id});showToast(`Claimed #${r.id}`,'warning');}));
+    const rb=card.querySelector('.resolve-btn');
+    if(rb) rb.addEventListener('click',()=>showConfirm(`Resolve report #${r.id}?`,()=>{nuiPost('resolveReport',{reportId:r.id});showToast(`Resolved #${r.id}`,'success');}));
+    const tb=card.querySelector('.teleport-btn');
+    if(tb) tb.addEventListener('click',()=>{nuiPost('teleportToReporter',{playerId:parseInt(tb.dataset.player)});closeAdminPanel();showToast('Teleporting...','info',2500);});
+    const tt=card.querySelector('.teleport-target-btn');
+    if(tt) tt.addEventListener('click',()=>{nuiPost('teleportToReporter',{playerId:parseInt(tt.dataset.player)});closeAdminPanel();showToast('Teleporting...','info',2500);});
     return card;
 }
 
-// ─────────────────────────────────────────
-//  NUI message handler
-// ─────────────────────────────────────────
-window.addEventListener('message', function (event) {
-    const data = event.data;
-    if (!data || !data.action) return;
+// ── History ──
+document.querySelectorAll('.history-tab').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+        document.querySelectorAll('.history-tab').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
+        $id('history-tab-content').classList.toggle('hidden',btn.dataset.tab!=='history');
+        $id('stats-tab-content').classList.toggle('hidden',btn.dataset.tab!=='stats');
+    });
+});
 
-    switch (data.action) {
+historySearchEl.addEventListener('input',debounce(()=>{State.historySearch=historySearchEl.value;State.historyPage=1;fetchHistory();},350));
+historyFilterEl.addEventListener('change',()=>{State.historyFilter=historyFilterEl.value;State.historyPage=1;fetchHistory();});
+$id('history-prev').addEventListener('click',()=>{if(State.historyPage<=1)return;State.historyPage--;fetchHistory();});
+$id('history-next').addEventListener('click',()=>{if(State.historyPage>=Math.ceil(State.historyTotal/State.historyPageSize))return;State.historyPage++;fetchHistory();});
 
-        case 'openReport': {
-            State.allPlayers = Array.isArray(data.players) ? data.players : [];
-            buildCategories(Array.isArray(data.categories) ? data.categories : []);
-            buildPlayerList(State.allPlayers);
-            resetReportForm();
-            reportOverlay.classList.remove('hidden');
-            break;
-        }
+function fetchHistory(){
+    setLoading(true);
+    nuiPost('fetchHistory',{page:State.historyPage,filter:State.historyFilter,search:State.historySearch}).finally(()=>setLoading(false));
+}
 
-        case 'openAdmin': {
-            renderReports(Array.isArray(data.reports) ? data.reports : []);
-            adminOverlay.classList.remove('hidden');
-            break;
-        }
+function renderHistory(data, page) {
+    const reports=Array.isArray(data.reports)?data.reports:[];
+    const adminStats=Array.isArray(data.adminStats)?data.adminStats:[];
+    State.historyTotal=data.total||0; State.historyPage=page||1;
+    const tp=Math.max(1,Math.ceil(State.historyTotal/State.historyPageSize));
+    historyPageInfo.textContent=`Page ${State.historyPage} / ${tp} (${State.historyTotal} total)`;
+    $id('history-prev').disabled=State.historyPage<=1;
+    $id('history-next').disabled=State.historyPage>=tp;
+    historyList.querySelectorAll('.history-card').forEach(c=>c.remove());
+    if(!reports.length){historyEmpty.style.display='flex';}
+    else{ historyEmpty.style.display='none'; const f=document.createDocumentFragment(); reports.forEach(r=>f.appendChild(buildHistoryCard(r))); historyList.appendChild(f); }
+    renderAdminStats(adminStats);
+}
 
-        case 'updateReports': {
-            if (Array.isArray(data.reports)) renderReports(data.reports);
-            break;
-        }
+function buildHistoryCard(r) {
+    const card=document.createElement('div'); card.className='history-card';
+    card.innerHTML=`
+        <div class="history-card-header"><span class="report-id">#${r.id}</span><span class="report-category-badge">${escapeHtml(r.category_label||r.category)}</span><span class="history-duration"><i class="fas fa-stopwatch"></i> ${fmtDuration(r.resolve_duration)}</span><span class="history-date"><i class="fas fa-calendar-check"></i> ${escapeHtml(r.resolved_at||'')}</span></div>
+        <div class="history-card-body"><div class="report-meta"><span><i class="fas fa-user"></i> ${escapeHtml(r.reporter_name)} (ID:${r.reporter_id})</span>${r.target_name?`<span><i class="fas fa-crosshairs"></i> ${escapeHtml(r.target_name)}</span>`:''}<span><i class="fas fa-shield-halved"></i> ${escapeHtml(r.resolved_by||'—')}</span></div><div class="report-description">${escapeHtml(r.description)}</div></div>`;
+    return card;
+}
 
-        case 'newReportAlert': {
-            const r = data.report;
-            if (!r) break;
-            showToast(
-                `New Report #${r.id} — ${escapeHtml(r.categoryLabel || r.category)} from ${escapeHtml(r.reporterName)}`,
-                'error', 6000
-            );
-            const refreshBtn = $id('refresh-reports');
-            if (refreshBtn) {
-                refreshBtn.classList.add('btn-alert-pulse');
-                setTimeout(() => refreshBtn.classList.remove('btn-alert-pulse'), 3000);
-            }
-            break;
-        }
+function renderAdminStats(rows) {
+    if(!rows||!rows.length){statsTbody.innerHTML='<tr><td colspan="7" class="stats-empty">No data yet</td></tr>';statsSummary.innerHTML='';return;}
+    const tot=rows.reduce((s,r)=>s+Number(r.total_resolved||0),0);
+    const avg=rows.reduce((s,r)=>s+Number(r.avg_duration_sec||0),0)/rows.length;
+    statsSummary.innerHTML=`
+        <div class="summary-card"><i class="fas fa-check-double"></i><span class="summary-val">${tot}</span><span class="summary-lbl">Total Resolved</span></div>
+        <div class="summary-card"><i class="fas fa-stopwatch"></i><span class="summary-val">${fmtDuration(avg)}</span><span class="summary-lbl">Avg Resolve Time</span></div>
+        <div class="summary-card"><i class="fas fa-trophy"></i><span class="summary-val">${escapeHtml(rows[0].admin_name)}</span><span class="summary-lbl">Top Resolver</span></div>
+        <div class="summary-card"><i class="fas fa-users-gear"></i><span class="summary-val">${rows.length}</span><span class="summary-lbl">Active Staff</span></div>`;
+    const ck=['cat_cheating','cat_rdm','cat_vdm','cat_toxicity','cat_bug','cat_other'];
+    const cl={cat_cheating:'Cheating',cat_rdm:'RDM',cat_vdm:'VDM',cat_toxicity:'Toxicity',cat_bug:'Bug',cat_other:'Other'};
+    const f=document.createDocumentFragment();
+    rows.forEach((row,i)=>{
+        let tk=ck[0],tv=0; ck.forEach(k=>{if(Number(row[k]||0)>tv){tv=Number(row[k]||0);tk=k;}});
+        const tr=document.createElement('tr'); if(i<3)tr.classList.add(`rank-${i+1}`);
+        tr.innerHTML=`<td class="rank-cell">${['🥇','🥈','🥉'][i]||i+1}</td><td class="admin-name-cell">${escapeHtml(row.admin_name)}</td><td class="num-cell">${row.total_resolved}</td><td class="dur-cell">${fmtDuration(row.avg_duration_sec)}</td><td class="dur-cell fast">${fmtDuration(row.min_duration_sec)}</td><td class="dur-cell slow">${fmtDuration(row.max_duration_sec)}</td><td><span class="cat-pill">${cl[tk]||'—'} (${tv})</span></td>`;
+        f.appendChild(tr);
+    });
+    statsTbody.innerHTML=''; statsTbody.appendChild(f);
+}
 
-        case 'closeAll': {
-            reportOverlay.classList.add('hidden');
-            adminOverlay.classList.add('hidden');
-            resetReportForm();
-            break;
-        }
+// ── NUI Messages ──
+window.addEventListener('message',function(e){
+    const d=e.data; if(!d||!d.action) return;
+    switch(d.action){
+        case 'openReport': State.allPlayers=Array.isArray(d.players)?d.players:[]; buildCategories(Array.isArray(d.categories)?d.categories:[]); buildPlayerList(State.allPlayers); resetReportForm(); reportOverlay.classList.remove('hidden'); break;
+        case 'openAdmin': renderReports(Array.isArray(d.reports)?d.reports:[]); adminOverlay.classList.remove('hidden'); break;
+        case 'updateReports': if(Array.isArray(d.reports))renderReports(d.reports); break;
+        case 'newReportAlert': { const r=d.report;if(!r)break; showToast(`New Report #${r.id} — ${escapeHtml(r.categoryLabel||r.category)} from ${escapeHtml(r.reporterName)}`,'error',6000); const b=$id('refresh-reports');if(b){b.classList.add('btn-alert-pulse');setTimeout(()=>b.classList.remove('btn-alert-pulse'),3000);} break; }
+        case 'openHistory':
+            State.historyPage=1;State.historySearch='';State.historyFilter='all';
+            historySearchEl.value='';historyFilterEl.value='all';
+            document.querySelectorAll('.history-tab').forEach(b=>b.classList.remove('active'));
+            document.querySelector('.history-tab[data-tab="history"]').classList.add('active');
+            $id('history-tab-content').classList.remove('hidden');
+            $id('stats-tab-content').classList.add('hidden');
+            historyOverlay.classList.remove('hidden'); break;
+        case 'loadHistory': renderHistory(d.data||{},d.page||1); break;
+        case 'closeAll': reportOverlay.classList.add('hidden');adminOverlay.classList.add('hidden');historyOverlay.classList.add('hidden');resetReportForm(); break;
     }
 });
 
-// ─────────────────────────────────────────
-//  Keyboard handler
-//  ESC → confirm dialog > report modal > admin panel
-//        her modal kapanışında Lua'ya escPressed gönder
-//  Ctrl+R → admin panelinde yenile
-// ─────────────────────────────────────────
-document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') {
-        // 1. Confirm dialog açıksa sadece onu kapat, Lua'ya bildirme
-        if (confirmOverlay && !confirmOverlay.classList.contains('hidden')) {
-            confirmOverlay.classList.add('hidden');
-            State.pendingAction = null;
-            return;
-        }
-        // 2. Report modal
-        if (!reportOverlay.classList.contains('hidden')) {
-            closeReportModal();
-            nuiPost('escPressed');
-            return;
-        }
-        // 3. Admin panel
-        if (!adminOverlay.classList.contains('hidden')) {
-            closeAdminPanel();
-            nuiPost('escPressed');
-            return;
-        }
+// ── Keyboard ──
+document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){
+        if(confirmOverlay&&!confirmOverlay.classList.contains('hidden')){confirmOverlay.classList.add('hidden');State.pendingAction=null;return;}
+        if(!reportOverlay.classList.contains('hidden')){closeReportModal();nuiPost('escPressed');return;}
+        if(!adminOverlay.classList.contains('hidden')){closeAdminPanel();nuiPost('escPressed');return;}
+        if(!historyOverlay.classList.contains('hidden')){closeHistoryPanel();nuiPost('escPressed');return;}
     }
-
-    if (e.key === 'r' && (e.ctrlKey || e.metaKey) && !adminOverlay.classList.contains('hidden')) {
-        e.preventDefault();
-        nuiPost('refreshReports');
-        showToast('Refreshing...', 'info', 1500);
-    }
+    if(e.key==='r'&&(e.ctrlKey||e.metaKey)&&!adminOverlay.classList.contains('hidden')){e.preventDefault();nuiPost('refreshReports');showToast('Refreshing...','info',1500);}
 });

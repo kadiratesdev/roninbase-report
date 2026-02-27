@@ -5,10 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Report System</title>
     <link rel="stylesheet" href="assets/css/style.css" />
-    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-    <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
 </head>
 <body>
@@ -17,9 +15,7 @@
      REPORT MODAL
 ═════════════════════════════════════════ -->
 <div id="report-overlay" class="overlay hidden">
-    <div class="modal report-modal" id="report-modal">
-
-        <!-- Header -->
+    <div class="modal report-modal">
         <div class="modal-header">
             <div class="modal-title">
                 <div class="title-icon"><i class="fas fa-flag"></i></div>
@@ -30,23 +26,15 @@
             </div>
             <button class="close-btn" id="close-report"><i class="fas fa-times"></i></button>
         </div>
-
-        <!-- Body -->
         <div class="modal-body">
-
-            <!-- Step 1: Category -->
-            <div class="step" id="step-1">
+            <div class="step">
                 <div class="step-header">
                     <span class="step-badge">1</span>
                     <h3>Select a Category</h3>
                 </div>
-                <div class="category-grid" id="category-grid">
-                    <!-- Injected by JS -->
-                </div>
+                <div class="category-grid" id="category-grid"></div>
             </div>
-
-            <!-- Step 2: Report Player (optional) -->
-            <div class="step" id="step-2">
+            <div class="step">
                 <div class="step-header">
                     <span class="step-badge">2</span>
                     <h3>Report a Specific Player? <span class="optional-tag">Optional</span></h3>
@@ -56,9 +44,7 @@
                         <i class="fas fa-search search-icon"></i>
                         <input type="text" id="player-search" placeholder="Search by name or ID..." autocomplete="off" />
                     </div>
-                    <div class="player-list" id="player-list">
-                        <!-- Injected by JS -->
-                    </div>
+                    <div class="player-list" id="player-list"></div>
                     <div class="selected-player hidden" id="selected-player-display">
                         <i class="fas fa-user-check"></i>
                         <span id="selected-player-name">None</span>
@@ -66,33 +52,21 @@
                     </div>
                 </div>
             </div>
-
-            <!-- Step 3: Description -->
-            <div class="step" id="step-3">
+            <div class="step">
                 <div class="step-header">
                     <span class="step-badge">3</span>
                     <h3>Describe the Issue</h3>
                 </div>
                 <div class="textarea-wrapper">
-                    <textarea id="report-description"
-                              placeholder="Provide as much detail as possible. What happened? Where? When?"
-                              maxlength="500"></textarea>
+                    <textarea id="report-description" placeholder="Provide as much detail as possible. What happened? Where? When?" maxlength="500"></textarea>
                     <div class="char-counter"><span id="char-count">0</span> / 500</div>
                 </div>
             </div>
-
         </div>
-
-        <!-- Footer -->
         <div class="modal-footer">
-            <button class="btn btn-ghost" id="cancel-report">
-                <i class="fas fa-ban"></i> Cancel
-            </button>
-            <button class="btn btn-primary" id="submit-report" disabled>
-                <i class="fas fa-paper-plane"></i> Submit Report
-            </button>
+            <button class="btn btn-ghost" id="cancel-report"><i class="fas fa-ban"></i> Cancel</button>
+            <button class="btn btn-primary" id="submit-report" disabled><i class="fas fa-paper-plane"></i> Submit Report</button>
         </div>
-
     </div>
 </div>
 
@@ -101,9 +75,7 @@
      ADMIN PANEL MODAL
 ═════════════════════════════════════════ -->
 <div id="admin-overlay" class="overlay hidden">
-    <div class="modal admin-modal" id="admin-modal">
-
-        <!-- Header -->
+    <div class="modal admin-modal">
         <div class="modal-header">
             <div class="modal-title">
                 <div class="title-icon admin-icon"><i class="fas fa-shield-halved"></i></div>
@@ -113,49 +85,104 @@
                 </div>
             </div>
             <div class="admin-header-actions">
-                <button class="btn btn-sm btn-outline" id="refresh-reports">
-                    <i class="fas fa-rotate-right"></i> Refresh
-                </button>
+                <button class="btn btn-sm btn-outline" id="refresh-reports"><i class="fas fa-rotate-right"></i> Refresh</button>
                 <button class="close-btn" id="close-admin"><i class="fas fa-times"></i></button>
             </div>
         </div>
-
-        <!-- Stats Bar -->
         <div class="stats-bar">
-            <div class="stat-item">
-                <span class="stat-value" id="stat-total">0</span>
-                <span class="stat-label">Total</span>
-            </div>
+            <div class="stat-item"><span class="stat-value" id="stat-total">0</span><span class="stat-label">Total</span></div>
             <div class="stat-divider"></div>
-            <div class="stat-item">
-                <span class="stat-value open" id="stat-open">0</span>
-                <span class="stat-label">Open</span>
-            </div>
+            <div class="stat-item"><span class="stat-value open" id="stat-open">0</span><span class="stat-label">Open</span></div>
             <div class="stat-divider"></div>
-            <div class="stat-item">
-                <span class="stat-value claimed" id="stat-claimed">0</span>
-                <span class="stat-label">Claimed</span>
-            </div>
-            <div class="stat-divider"></div>
-            <div class="stat-item">
-                <span class="stat-value resolved" id="stat-resolved">0</span>
-                <span class="stat-label">Resolved</span>
-            </div>
+            <div class="stat-item"><span class="stat-value claimed" id="stat-claimed">0</span><span class="stat-label">Claimed</span></div>
         </div>
-
-        <!-- Filter Tabs -->
         <div class="filter-tabs">
             <button class="tab-btn active" data-filter="all">All</button>
             <button class="tab-btn" data-filter="open">Open</button>
             <button class="tab-btn" data-filter="claimed">Claimed</button>
-            <button class="tab-btn" data-filter="resolved">Resolved</button>
         </div>
-
-        <!-- Report List -->
         <div class="report-list" id="report-list">
             <div class="empty-state" id="empty-state">
                 <i class="fas fa-inbox"></i>
                 <p>No reports found</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     HISTORY PANEL MODAL  (SuperAdmin)
+═════════════════════════════════════════ -->
+<div id="history-overlay" class="overlay hidden">
+    <div class="modal history-modal">
+        <div class="modal-header">
+            <div class="modal-title">
+                <div class="title-icon history-icon"><i class="fas fa-clock-rotate-left"></i></div>
+                <div>
+                    <h2>Report History</h2>
+                    <p class="subtitle">Resolved reports &amp; staff statistics</p>
+                </div>
+            </div>
+            <button class="close-btn" id="close-history"><i class="fas fa-times"></i></button>
+        </div>
+
+        <!-- Tab bar -->
+        <div class="history-tabs">
+            <button class="history-tab active" data-tab="history"><i class="fas fa-list"></i> History</button>
+            <button class="history-tab" data-tab="stats"><i class="fas fa-chart-bar"></i> Staff Stats</button>
+        </div>
+
+        <!-- History tab -->
+        <div id="history-tab-content" class="htab-content">
+            <div class="history-toolbar">
+                <div class="search-box" style="flex:1">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="text" id="history-search" placeholder="Search reporter, admin, description..." autocomplete="off" />
+                </div>
+                <select id="history-filter" class="history-select">
+                    <option value="all">All Categories</option>
+                    <option value="cheating">Cheating</option>
+                    <option value="rdm">RDM</option>
+                    <option value="vdm">VDM</option>
+                    <option value="toxicity">Toxicity</option>
+                    <option value="bug">Bug</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="history-list" id="history-list">
+                <div class="empty-state" id="history-empty">
+                    <i class="fas fa-inbox"></i>
+                    <p>No resolved reports found</p>
+                </div>
+            </div>
+            <div class="history-pagination">
+                <button class="btn btn-sm btn-ghost" id="history-prev"><i class="fas fa-chevron-left"></i></button>
+                <span class="page-info" id="history-page-info">Page 1</span>
+                <button class="btn btn-sm btn-ghost" id="history-next"><i class="fas fa-chevron-right"></i></button>
+            </div>
+        </div>
+
+        <!-- Stats tab -->
+        <div id="stats-tab-content" class="htab-content hidden">
+            <div class="stats-summary" id="stats-summary"></div>
+            <div class="stats-table-wrapper">
+                <table class="stats-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Admin</th>
+                            <th>Resolved</th>
+                            <th>Avg Time</th>
+                            <th>Fastest</th>
+                            <th>Slowest</th>
+                            <th>Top Category</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stats-tbody">
+                        <tr><td colspan="7" class="stats-empty">No data yet</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
