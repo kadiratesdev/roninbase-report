@@ -13,8 +13,14 @@ client_scripts {
 
 -- server_config.lua yalnızca sunucu tarafında yüklenir → webhook asla client'a sızmaz
 server_scripts {
+    '@oxmysql/lib/MySQL.lua',
     'server_config.lua',
     'server.lua'
+}
+
+dependencies {
+    'oxmysql',
+    'qb-core',
 }
 
 ui_page 'html/index.html'
