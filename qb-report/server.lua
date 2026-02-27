@@ -232,15 +232,19 @@ end
 QBCore.Functions.CreateCallback('qb-report:server:getPlayers', function(source, cb)
     if RateLimit(source) then cb({}) return end
 
-    local players = {}
+    local players   = {}
     local qbPlayers = QBCore.Functions.GetQBPlayers()
+    if not qbPlayers then cb(players) return end
+
     for _, player in pairs(qbPlayers) do
-        local s = player.PlayerData.source
-        if s ~= source then
-            players[#players + 1] = {
-                id   = s,
-                name = SafeGetName(s),
-            }
+        if player and player.PlayerData then
+            local s = player.PlayerData.source
+            if s and s ~= source then
+                players[#players + 1] = {
+                    id   = s,
+                    name = SafeGetName(s),
+                }
+            end
         end
     end
     cb(players)

@@ -1,8 +1,7 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 --  qb-report  |  client.lua
 --  Performans notları:
---    • ESC thread: NUI kapalıyken Citizen.Wait(500) → CPU'ya yük yok
---    • NUI açıkken: Citizen.Wait(0) ile anlık ESC algılaması
+--    • ESC: Lua thread yok; JS keydown → nuiPost('escPressed') → CloseNUI()
 --    • NUI Callback'lerde tip + uzunluk kontrolü yapılır
 --    • Server'a asla ham/unsafe veri gönderilmez
 -- ─────────────────────────────────────────────────────────────────────────────

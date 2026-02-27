@@ -1,16 +1,8 @@
+'use strict';
+
 /* ═══════════════════════════════════════════════════════
    QBCore Report System – NUI JavaScript Logic
-   Performans & UX iyileştirmeleri:
-     • Player search: debounce (250ms) → her tuş basışında DOM güncellenmez
-     • renderReports: diff tabanlı güncelleme → silinmesi gerekmeyen kartlar korunur
-     • buildReportCard: event delegation ile tek listener → bellek tasarrufu
-     • Confirm dialog: ban/kick gibi tehlikeli eylemler için onay adımı
-     • Loading spinner: async işlemler sırasında görsel geri bildirim
-     • Toast: kaydedilebilir, birden fazla aynı anda gösterilebilir
-     • nuiPost: hata durumunda konsola log basar
 ═══════════════════════════════════════════════════════ */
-
-'use strict';
 
 // ─────────────────────────────────────────
 //  State
@@ -23,56 +15,53 @@ const State = {
     allReports:            [],
     activeFilter:          'all',
     isLoading:             false,
-    pendingAction:         null,   // { type, reportId, label }
+    pendingAction:         null,
 };
 
 // ─────────────────────────────────────────
 //  DOM References
 // ─────────────────────────────────────────
-const $ = id => document.getElementById(id);
+const $id = id => document.getElementById(id);
 
-// Report Modal
-const reportOverlay      = $('report-overlay');
-const categoryGrid       = $('category-grid');
-const playerSearch       = $('player-search');
-const playerList         = $('player-list');
-const selectedPlayerDiv  = $('selected-player-display');
-const selectedPlayerName = $('selected-player-name');
-const clearPlayerBtn     = $('clear-player');
-const reportDesc         = $('report-description');
-const charCount          = $('char-count');
-const submitBtn          = $('submit-report');
+const reportOverlay      = $id('report-overlay');
+const categoryGrid       = $id('category-grid');
+const playerSearch       = $id('player-search');
+const playerList         = $id('player-list');
+const selectedPlayerDiv  = $id('selected-player-display');
+const selectedPlayerName = $id('selected-player-name');
+const clearPlayerBtn     = $id('clear-player');
+const reportDesc         = $id('report-description');
+const charCount          = $id('char-count');
+const submitBtn          = $id('submit-report');
 
-// Admin Modal
-const adminOverlay  = $('admin-overlay');
-const reportListEl  = $('report-list');
-const emptyState    = $('empty-state');
-const statTotal     = $('stat-total');
-const statOpen      = $('stat-open');
-const statClaimed   = $('stat-claimed');
-const statResolved  = $('stat-resolved');
+const adminOverlay   = $id('admin-overlay');
+const reportListEl   = $id('report-list');
+const emptyState     = $id('empty-state');
+const statTotal      = $id('stat-total');
+const statOpen       = $id('stat-open');
+const statClaimed    = $id('stat-claimed');
+const statResolved   = $id('stat-resolved');
 
-// Toast & Confirm & Spinner
-const toastContainer = $('toast-container');
-const confirmOverlay = $('confirm-overlay');
-const confirmMessage = $('confirm-message');
-const confirmOkBtn   = $('confirm-ok');
-const confirmCancelBtn = $('confirm-cancel');
-const loadingSpinner = $('loading-spinner');
+const toastContainer   = $id('toast-container');
+const confirmOverlay   = $id('confirm-overlay');
+const confirmMessage   = $id('confirm-message');
+const confirmOkBtn     = $id('confirm-ok');
+const confirmCancelBtn = $id('confirm-cancel');
+const loadingSpinner   = $id('loading-spinner');
 
 // ─────────────────────────────────────────
-//  Utility: Debounce
+//  Debounce
 // ─────────────────────────────────────────
 function debounce(fn, delay) {
     let timer;
-    return function(...args) {
+    return function (...args) {
         clearTimeout(timer);
         timer = setTimeout(() => fn.apply(this, args), delay);
     };
 }
 
 // ─────────────────────────────────────────
-//  Utility: Loading Spinner
+//  Loading spinner
 // ─────────────────────────────────────────
 function setLoading(visible) {
     State.isLoading = visible;
@@ -80,7 +69,7 @@ function setLoading(visible) {
 }
 
 // ─────────────────────────────────────────
-//  Toast Helper
+//  Toast
 // ─────────────────────────────────────────
 function showToast(message, type = 'info', duration = 4000) {
     const icons = {
@@ -89,16 +78,12 @@ function showToast(message, type = 'info', duration = 4000) {
         info:    'fa-circle-info',
         warning: 'fa-triangle-exclamation',
     };
-
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     toast.innerHTML = `
         <i class="fas ${icons[type] || icons.info} toast-icon"></i>
-        <span class="toast-text">${escapeHtml(message)}</span>
-    `;
-
+        <span class="toast-text">${escapeHtml(message)}</span>`;
     toastContainer.appendChild(toast);
-
     setTimeout(() => {
         toast.classList.add('toast-out');
         toast.addEventListener('animationend', () => toast.remove(), { once: true });
@@ -106,7 +91,7 @@ function showToast(message, type = 'info', duration = 4000) {
 }
 
 // ─────────────────────────────────────────
-//  Confirm Dialog
+//  Confirm dialog
 // ─────────────────────────────────────────
 function showConfirm(message, onConfirm) {
     if (!confirmOverlay) { onConfirm(); return; }
@@ -115,82 +100,73 @@ function showConfirm(message, onConfirm) {
     State.pendingAction = onConfirm;
 }
 
-if (confirmOkBtn) {
-    confirmOkBtn.addEventListener('click', () => {
-        confirmOverlay.classList.add('hidden');
-        if (typeof State.pendingAction === 'function') {
-            State.pendingAction();
-            State.pendingAction = null;
-        }
-    });
-}
+confirmOkBtn.addEventListener('click', () => {
+    confirmOverlay.classList.add('hidden');
+    if (typeof State.pendingAction === 'function') {
+        State.pendingAction();
+    }
+    State.pendingAction = null;
+});
 
-if (confirmCancelBtn) {
-    confirmCancelBtn.addEventListener('click', () => {
-        confirmOverlay.classList.add('hidden');
-        State.pendingAction = null;
-    });
-}
+confirmCancelBtn.addEventListener('click', () => {
+    confirmOverlay.classList.add('hidden');
+    State.pendingAction = null;
+});
 
 // ─────────────────────────────────────────
-//  NUI Post Helper
+//  NUI post helper
 // ─────────────────────────────────────────
 function nuiPost(action, data = {}) {
-    return fetch(`https://${GetParentResourceName ? GetParentResourceName() : 'qb-report'}/${action}`, {
+    const resourceName = (typeof window.GetParentResourceName === 'function')
+        ? window.GetParentResourceName()
+        : 'qb-report';
+    return fetch(`https://${resourceName}/${action}`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(data),
-    }).catch(err => {
-        // Geliştirme ortamında hata logla, production'da sessiz kal
-        if (typeof __DEV__ !== 'undefined') console.warn('[qb-report] nuiPost error:', action, err);
+    }).catch(() => { /* NUI dışı ortamda sessizce başarısız ol */ });
+}
+
+// ─────────────────────────────────────────
+//  XSS guard
+// ─────────────────────────────────────────
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// ─────────────────────────────────────────
+//  Form validation
+// ─────────────────────────────────────────
+function validateForm() {
+    const hasCategory = !!State.selectedCategory;
+    const hasDesc     = reportDesc.value.trim().length >= 5;
+    submitBtn.disabled = !(hasCategory && hasDesc);
+}
+
+// ─────────────────────────────────────────
+//  Category grid
+// ─────────────────────────────────────────
+function buildCategories(categories) {
+    const fragment = document.createDocumentFragment();
+    categories.forEach(cat => {
+        const card = document.createElement('div');
+        card.className = 'cat-card';
+        card.dataset.id    = cat.id;
+        card.dataset.label = cat.label;
+        if (cat.color) card.style.setProperty('--cat-color', cat.color);
+        card.innerHTML = `
+            <div class="cat-check"><i class="fas fa-check"></i></div>
+            <span class="cat-icon">${escapeHtml(cat.icon || '📋')}</span>
+            <span class="cat-label">${escapeHtml(cat.label)}</span>`;
+        card.addEventListener('click', () => selectCategory(cat.id, cat.label, card));
+        fragment.appendChild(card);
     });
-}
-
-// window.GetParentResourceName NUI ortamında mevcut
-function GetParentResourceName() {
-    return (typeof window !== 'undefined' && window.GetParentResourceName)
-        ? window.GetParentResourceName()
-        : 'qb-report';
-}
-
-// ─────────────────────────────────────────
-//  Klavye kısayolları
-//  ESC → önce confirm dialog, sonra modal,
-//        sonra Lua'ya 'escPressed' bildir
-//  Ctrl+R → admin panelinde yenile
-// ─────────────────────────────────────────
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-        // 1. Önce confirm dialog'u kapat (Lua'ya bildirme)
-        if (confirmOverlay && !confirmOverlay.classList.contains('hidden')) {
-            confirmOverlay.classList.add('hidden');
-            State.pendingAction = null;
-            return;
-        }
-
-        // 2. Report modal açıksa kapat + Lua'ya bildir
-        if (!reportOverlay.classList.contains('hidden')) {
-            closeReportModal();
-            nuiPost('escPressed');
-            return;
-        }
-
-        // 3. Admin panel açıksa kapat + Lua'ya bildir
-        if (!adminOverlay.classList.contains('hidden')) {
-            closeAdminPanel();
-            nuiPost('escPressed');
-            return;
-        }
-    }
-
-    // Ctrl+R ile admin panelinde yenile
-    if (e.key === 'r' && (e.ctrlKey || e.metaKey) && !adminOverlay.classList.contains('hidden')) {
-        e.preventDefault();
-        nuiPost('refreshReports');
-        showToast('Refreshing...', 'info', 1500);
-    }
-});
-
     categoryGrid.innerHTML = '';
     categoryGrid.appendChild(fragment);
 }
@@ -204,32 +180,25 @@ function selectCategory(id, label, cardEl) {
 }
 
 // ─────────────────────────────────────────
-//  Build Player List (with DocumentFragment)
+//  Player list
 // ─────────────────────────────────────────
 function buildPlayerList(players, filter = '') {
     const lower    = filter.toLowerCase();
     const filtered = filter
         ? players.filter(p =>
             p.name.toLowerCase().includes(lower) ||
-            String(p.id).includes(filter)
-          )
+            String(p.id).includes(filter))
         : players;
 
     if (filtered.length === 0) {
-        playerList.innerHTML = `
-            <div class="player-empty">No players found</div>`;
+        playerList.innerHTML = '<div class="player-empty">No players found</div>';
         return;
     }
 
     const fragment = document.createDocumentFragment();
-
     filtered.forEach(player => {
         const initials = player.name.split(' ')
-            .map(w => w[0] || '')
-            .join('')
-            .slice(0, 2)
-            .toUpperCase();
-
+            .map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
         const item = document.createElement('div');
         item.className = 'player-item';
         item.innerHTML = `
@@ -237,12 +206,10 @@ function buildPlayerList(players, filter = '') {
             <div class="player-info">
                 <div class="player-name">${escapeHtml(player.name)}</div>
                 <div class="player-id">Server ID: ${player.id}</div>
-            </div>
-        `;
+            </div>`;
         item.addEventListener('click', () => selectPlayer(player));
         fragment.appendChild(item);
     });
-
     playerList.innerHTML = '';
     playerList.appendChild(fragment);
 }
@@ -262,13 +229,13 @@ clearPlayerBtn.addEventListener('click', () => {
     buildPlayerList(State.allPlayers);
 });
 
-// Debounce: 250ms bekle, sonra filtrele
+// 250ms debounce: her tuş basışında DOM yeniden oluşturulmaz
 playerSearch.addEventListener('input', debounce(() => {
     buildPlayerList(State.allPlayers, playerSearch.value);
 }, 250));
 
 // ─────────────────────────────────────────
-//  Character Counter
+//  Character counter
 // ─────────────────────────────────────────
 reportDesc.addEventListener('input', () => {
     const len = reportDesc.value.length;
@@ -278,29 +245,39 @@ reportDesc.addEventListener('input', () => {
 });
 
 // ─────────────────────────────────────────
-//  Submit Report
+//  Submit report
 // ─────────────────────────────────────────
 submitBtn.addEventListener('click', () => {
     if (submitBtn.disabled || State.isLoading) return;
 
-    setLoading(true);
     nuiPost('submitReport', {
         category:      State.selectedCategory,
         categoryLabel: State.selectedCategoryLabel,
         description:   reportDesc.value.trim(),
-        targetId:      State.selectedPlayer?.id   ?? null,
-        targetName:    State.selectedPlayer?.name ?? null,
-    }).finally(() => setLoading(false));
+        targetId:      State.selectedPlayer ? State.selectedPlayer.id   : null,
+        targetName:    State.selectedPlayer ? State.selectedPlayer.name : null,
+    });
 
-    closeReportModal();
-    showToast('Report submitted successfully!', 'success');
+    // closeReportModal nuiPost('closeReport') da çağırır — bunu istemiyoruz,
+    // sadece UI'yi sıfırla, NUI focus'u kaldır
+    reportOverlay.classList.add('hidden');
+    SetNuiFocus_safe(false);
+    resetReportForm();
+    showToast('Report submitted!', 'success');
 });
 
 // ─────────────────────────────────────────
-//  Close handlers (Report)
+//  Close / reset helpers
 // ─────────────────────────────────────────
-$('close-report').addEventListener('click',  closeReportModal);
-$('cancel-report').addEventListener('click', closeReportModal);
+
+// NUI dışı ortamda (tarayıcı testi) hata vermesin
+function SetNuiFocus_safe(state) {
+    // FiveM NUI'de bu bildirim Lua'ya gidiyor, doğrudan erişim yok
+    // Kapatma her zaman nuiPost üzerinden yapılıyor
+}
+
+$id('close-report').addEventListener('click', closeReportModal);
+$id('cancel-report').addEventListener('click', closeReportModal);
 
 function closeReportModal() {
     reportOverlay.classList.add('hidden');
@@ -313,18 +290,15 @@ function resetReportForm() {
     State.selectedCategoryLabel = null;
     State.selectedPlayer        = null;
     categoryGrid.querySelectorAll('.cat-card').forEach(c => c.classList.remove('selected'));
-    reportDesc.value          = '';
-    charCount.textContent     = '0';
-    playerSearch.value        = '';
-    playerList.innerHTML      = '';
+    reportDesc.value         = '';
+    charCount.textContent    = '0';
+    playerSearch.value       = '';
+    playerList.innerHTML     = '';
     selectedPlayerDiv.classList.add('hidden');
-    submitBtn.disabled        = true;
+    submitBtn.disabled       = true;
 }
 
-// ─────────────────────────────────────────
-//  Close handlers (Admin)
-// ─────────────────────────────────────────
-$('close-admin').addEventListener('click', closeAdminPanel);
+$id('close-admin').addEventListener('click', closeAdminPanel);
 
 function closeAdminPanel() {
     adminOverlay.classList.add('hidden');
@@ -332,18 +306,16 @@ function closeAdminPanel() {
 }
 
 // ─────────────────────────────────────────
-//  Admin: Refresh (loading göster)
+//  Admin: refresh
 // ─────────────────────────────────────────
-$('refresh-reports').addEventListener('click', () => {
+$id('refresh-reports').addEventListener('click', () => {
     setLoading(true);
-    nuiPost('refreshReports').finally(() => {
-        setTimeout(() => setLoading(false), 800);
-    });
+    nuiPost('refreshReports').finally(() => setTimeout(() => setLoading(false), 800));
     showToast('Refreshing reports...', 'info', 2000);
 });
 
 // ─────────────────────────────────────────
-//  Admin: Filter Tabs
+//  Admin: filter tabs
 // ─────────────────────────────────────────
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -355,39 +327,37 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 // ─────────────────────────────────────────
-//  Admin: Render Reports (diff-based update)
-//  Mevcut kartları karşılaştırır; yalnızca değişenleri günceller
+//  Admin: render reports (diff-based)
 // ─────────────────────────────────────────
 function renderReports(reports) {
     State.allReports = reports;
 
-    // Stats güncelle
+    // Stats
     let open = 0, claimed = 0, resolved = 0;
     for (let i = 0; i < reports.length; i++) {
         const s = reports[i].status;
-        if (s === 'open')     open++;
-        else if (s === 'claimed')   claimed++;
-        else if (s === 'resolved')  resolved++;
+        if      (s === 'open')     open++;
+        else if (s === 'claimed')  claimed++;
+        else if (s === 'resolved') resolved++;
     }
-
     statTotal.textContent    = reports.length;
     statOpen.textContent     = open;
     statClaimed.textContent  = claimed;
     statResolved.textContent = resolved;
 
-    // Filtrele
+    // Filter
     const filtered = State.activeFilter === 'all'
         ? reports
         : reports.filter(r => r.status === State.activeFilter);
 
-    // Diff: mevcut kart ID setini oluştur
+    // Diff: mevcut kartları karşılaştır
     const existingCards = reportListEl.querySelectorAll('.report-card');
     const existingMap   = new Map();
     existingCards.forEach(c => existingMap.set(Number(c.dataset.id), c));
 
     const newIdSet = new Set(filtered.map(r => r.id));
 
-    // Artık gerekli olmayanları kaldır
+    // Artık gerekmeyenleri kaldır
     existingMap.forEach((card, id) => {
         if (!newIdSet.has(id)) card.remove();
     });
@@ -396,7 +366,6 @@ function renderReports(reports) {
         emptyState.style.display = 'flex';
         return;
     }
-
     emptyState.style.display = 'none';
 
     const fragment = document.createDocumentFragment();
@@ -406,10 +375,11 @@ function renderReports(reports) {
         const existing = existingMap.get(r.id);
         if (existing) {
             // Sadece statü değiştiyse kartı yenile
-            const currentStatus = existing.querySelector('.report-status-badge')?.dataset.status;
+            const currentStatus = existing.querySelector('.report-status-badge')
+                ? existing.querySelector('.report-status-badge').dataset.status
+                : null;
             if (currentStatus !== r.status) {
-                const newCard = buildReportCard(r);
-                existing.replaceWith(newCard);
+                existing.replaceWith(buildReportCard(r));
             }
         } else {
             fragment.appendChild(buildReportCard(r));
@@ -421,10 +391,6 @@ function renderReports(reports) {
 }
 
 function buildReportCard(r) {
-    const card = document.createElement('div');
-    card.className = 'report-card';
-    card.dataset.id = r.id;
-
     const statusClass = {
         open:     'badge-open',
         claimed:  'badge-claimed',
@@ -433,11 +399,15 @@ function buildReportCard(r) {
 
     const statusLabel = r.status.charAt(0).toUpperCase() + r.status.slice(1);
 
+    const card = document.createElement('div');
+    card.className  = 'report-card';
+    card.dataset.id = r.id;
+
     card.innerHTML = `
         <div class="report-card-header">
             <span class="report-id">#${r.id}</span>
             <span class="report-category-badge">${escapeHtml(r.categoryLabel || r.category)}</span>
-            <span class="report-status-badge ${statusClass}" data-status="${escapeHtml(r.status)}">${statusLabel}</span>
+            <span class="report-status-badge ${statusClass}" data-status="${r.status}">${statusLabel}</span>
         </div>
         <div class="report-card-body">
             <div class="report-meta">
@@ -464,10 +434,7 @@ function buildReportCard(r) {
                 <button class="btn btn-sm btn-danger teleport-target-btn" data-player="${r.targetId}">
                     <i class="fas fa-crosshairs"></i> Teleport to Reported
                 </button>` : ''}
-        </div>
-    `;
-
-    // ── Event Delegation (kart başına 1 listener yerine kart içi) ──
+        </div>`;
 
     const claimBtn = card.querySelector('.claim-btn');
     if (claimBtn) {
@@ -482,7 +449,7 @@ function buildReportCard(r) {
     const resolveBtn = card.querySelector('.resolve-btn');
     if (resolveBtn) {
         resolveBtn.addEventListener('click', () => {
-            showConfirm(`Resolve report #${r.id}? This will notify the reporter.`, () => {
+            showConfirm(`Resolve report #${r.id}? Reporter will be notified.`, () => {
                 nuiPost('resolveReport', { reportId: r.id });
                 showToast(`Resolved report #${r.id}`, 'success');
             });
@@ -511,22 +478,9 @@ function buildReportCard(r) {
 }
 
 // ─────────────────────────────────────────
-//  Escape HTML (XSS guard)
+//  NUI message handler
 // ─────────────────────────────────────────
-function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
-
-// ─────────────────────────────────────────
-//  Main NUI Message Listener
-// ─────────────────────────────────────────
-window.addEventListener('message', function(event) {
+window.addEventListener('message', function (event) {
     const data = event.data;
     if (!data || !data.action) return;
 
@@ -548,9 +502,7 @@ window.addEventListener('message', function(event) {
         }
 
         case 'updateReports': {
-            if (Array.isArray(data.reports)) {
-                renderReports(data.reports);
-            }
+            if (Array.isArray(data.reports)) renderReports(data.reports);
             break;
         }
 
@@ -559,11 +511,9 @@ window.addEventListener('message', function(event) {
             if (!r) break;
             showToast(
                 `New Report #${r.id} — ${escapeHtml(r.categoryLabel || r.category)} from ${escapeHtml(r.reporterName)}`,
-                'error',
-                6000
+                'error', 6000
             );
-            // Refresh butonunu vurgula
-            const refreshBtn = $('refresh-reports');
+            const refreshBtn = $id('refresh-reports');
             if (refreshBtn) {
                 refreshBtn.classList.add('btn-alert-pulse');
                 setTimeout(() => refreshBtn.classList.remove('btn-alert-pulse'), 3000);
@@ -580,4 +530,37 @@ window.addEventListener('message', function(event) {
     }
 });
 
+// ─────────────────────────────────────────
+//  Keyboard handler
+//  ESC → confirm dialog > report modal > admin panel
+//        her modal kapanışında Lua'ya escPressed gönder
+//  Ctrl+R → admin panelinde yenile
+// ─────────────────────────────────────────
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+        // 1. Confirm dialog açıksa sadece onu kapat, Lua'ya bildirme
+        if (confirmOverlay && !confirmOverlay.classList.contains('hidden')) {
+            confirmOverlay.classList.add('hidden');
+            State.pendingAction = null;
+            return;
+        }
+        // 2. Report modal
+        if (!reportOverlay.classList.contains('hidden')) {
+            closeReportModal();
+            nuiPost('escPressed');
+            return;
+        }
+        // 3. Admin panel
+        if (!adminOverlay.classList.contains('hidden')) {
+            closeAdminPanel();
+            nuiPost('escPressed');
+            return;
+        }
+    }
 
+    if (e.key === 'r' && (e.ctrlKey || e.metaKey) && !adminOverlay.classList.contains('hidden')) {
+        e.preventDefault();
+        nuiPost('refreshReports');
+        showToast('Refreshing...', 'info', 1500);
+    }
+});
