@@ -4,6 +4,82 @@
    QBCore Report System – NUI JavaScript Logic
 ═══════════════════════════════════════════════════════ */
 
+/* ─────────────────────────────────────────
+   i18n Engine
+───────────────────────────────────────── */
+const I18n = {
+    locale: 'en',
+    translations: {},
+
+    async load(lang) {
+        try {
+            const res = await fetch(`assets/locales/${lang}.json`);
+            if (!res.ok) throw new Error('locale not found');
+            this.translations[lang] = await res.json();
+        } catch (e) {
+            console.warn(`[i18n] Could not load locale: ${lang}`, e);
+        }
+    },
+
+    t(key, vars) {
+        const dict = this.translations[this.locale] || this.translations['en'] || {};
+        let str = dict[key] || key;
+        if (vars) {
+            for (const [k, v] of Object.entries(vars)) {
+                str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), v);
+            }
+        }
+        return str;
+    },
+
+    async setLocale(lang) {
+        if (!this.translations[lang]) await this.load(lang);
+        this.locale = lang;
+        localStorage.setItem('qb_report_lang', lang);
+        document.documentElement.lang = lang;
+        this.applyToDOM();
+        this.updateLangButtons();
+    },
+
+    applyToDOM() {
+        // text content
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.dataset.i18n;
+            el.textContent = this.t(key);
+        });
+        // placeholders
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+            el.placeholder = this.t(el.dataset.i18nPlaceholder);
+        });
+        // select options
+        document.querySelectorAll('select option[data-i18n]').forEach(el => {
+            el.textContent = this.t(el.dataset.i18n);
+        });
+    },
+
+    updateLangButtons() {
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.lang === this.locale);
+        });
+    },
+
+    async init() {
+        const saved = localStorage.getItem('qb_report_lang') || 'en';
+        await Promise.all([this.load('en'), this.load('tr')]);
+        this.locale = saved;
+        document.documentElement.lang = saved;
+        this.applyToDOM();
+        this.updateLangButtons();
+
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.setLocale(btn.dataset.lang));
+        });
+    }
+};
+
+/* ─────────────────────────────────────────
+   State
+───────────────────────────────────────── */
 const State = {
     selectedCategory: null, selectedCategoryLabel: null, selectedPlayer: null,
     allPlayers: [], allReports: [], activeFilter: 'all',
@@ -83,12 +159,12 @@ function selectCategory(id,label,el) {
 function buildPlayerList(players, filter='') {
     const lo=filter.toLowerCase();
     const filtered=filter?players.filter(p=>p.name.toLowerCase().includes(lo)||String(p.id).includes(filter)):players;
-    if(!filtered.length){playerList.innerHTML='<div class="player-empty">No players found</div>';return;}
+    if(!filtered.length){playerList.innerHTML=`<div class="player-empty">${escapeHtml(I18n.t('player_not_found'))}</div>`;return;}
     const f=document.createDocumentFragment();
     filtered.forEach(p=>{
         const inits=p.name.split(' ').map(w=>w[0]||'').join('').slice(0,2).toUpperCase();
         const item=document.createElement('div'); item.className='player-item';
-        item.innerHTML=`<div class="player-avatar">${escapeHtml(inits)}</div><div class="player-info"><div class="player-name">${escapeHtml(p.name)}</div><div class="player-id">Server ID: ${p.id}</div></div>`;
+        item.innerHTML=`<div class="player-avatar">${escapeHtml(inits)}</div><div class="player-info"><div class="player-name">${escapeHtml(p.name)}</div><div class="player-id">${escapeHtml(I18n.t('server_id'))}: ${p.id}</div></div>`;
         item.addEventListener('click',()=>selectPlayer(p)); f.appendChild(item);
     });
     playerList.innerHTML=''; playerList.appendChild(f);
@@ -105,7 +181,7 @@ reportDesc.addEventListener('input',()=>{ const l=reportDesc.value.length; charC
 submitBtn.addEventListener('click',()=>{
     if(submitBtn.disabled||State.isLoading) return;
     nuiPost('submitReport',{category:State.selectedCategory,categoryLabel:State.selectedCategoryLabel,description:reportDesc.value.trim(),targetId:State.selectedPlayer?State.selectedPlayer.id:null,targetName:State.selectedPlayer?State.selectedPlayer.name:null});
-    reportOverlay.classList.add('hidden'); resetReportForm(); showToast('Report submitted!','success');
+    reportOverlay.classList.add('hidden'); resetReportForm(); showToast(I18n.t('toast_report_submitted'),'success');
 });
 
 $id('close-report').addEventListener('click',closeReportModal);
@@ -125,7 +201,8 @@ $id('close-history').addEventListener('click',closeHistoryPanel);
 function closeHistoryPanel(){historyOverlay.classList.add('hidden');nuiPost('closeHistory');}
 
 $id('refresh-reports').addEventListener('click',()=>{
-    setLoading(true); nuiPost('refreshReports').finally(()=>setTimeout(()=>setLoading(false),800)); showToast('Refreshing...','info',2000);
+    setLoading(true); nuiPost('refreshReports').finally(()=>setTimeout(()=>setLoading(false),800));
+    showToast(I18n.t('toast_refreshing'),'info',2000);
 });
 
 document.querySelectorAll('.tab-btn').forEach(btn=>{
@@ -156,15 +233,15 @@ function buildReportCard(r) {
     card.innerHTML=`
         <div class="report-card-header"><span class="report-id">#${r.id}</span><span class="report-category-badge">${escapeHtml(r.categoryLabel||r.category)}</span><span class="report-status-badge ${sc}" data-status="${r.status}">${r.status.charAt(0).toUpperCase()+r.status.slice(1)}</span></div>
         <div class="report-card-body"><div class="report-meta"><span><i class="fas fa-user"></i> ${escapeHtml(r.reporterName)} (ID:${r.reporterId})</span>${r.targetName?`<span><i class="fas fa-crosshairs"></i> ${escapeHtml(r.targetName)}</span>`:''}<span><i class="fas fa-clock"></i> ${escapeHtml(r.timestamp)}</span>${r.claimedBy?`<span><i class="fas fa-shield-halved"></i> ${escapeHtml(r.claimedBy)}</span>`:''}</div><div class="report-description">${escapeHtml(r.description)}</div></div>
-        <div class="report-card-actions">${r.status==='open'?`<button class="btn btn-sm btn-yellow claim-btn" data-id="${r.id}"><i class="fas fa-hand-paper"></i> Claim</button>`:''}<button class="btn btn-sm btn-success resolve-btn" data-id="${r.id}"><i class="fas fa-check"></i> Resolve</button><button class="btn btn-sm btn-outline teleport-btn" data-player="${r.reporterId}"><i class="fas fa-location-crosshairs"></i> Teleport</button>${r.targetId?`<button class="btn btn-sm btn-danger teleport-target-btn" data-player="${r.targetId}"><i class="fas fa-crosshairs"></i> Tp Reported</button>`:''}</div>`;
+        <div class="report-card-actions">${r.status==='open'?`<button class="btn btn-sm btn-yellow claim-btn" data-id="${r.id}"><i class="fas fa-hand-paper"></i> ${escapeHtml(I18n.t('tab_claimed'))}</button>`:''}<button class="btn btn-sm btn-success resolve-btn" data-id="${r.id}"><i class="fas fa-check"></i> ${escapeHtml(I18n.t('th_resolved'))}</button><button class="btn btn-sm btn-outline teleport-btn" data-player="${r.reporterId}"><i class="fas fa-location-crosshairs"></i> Teleport</button>${r.targetId?`<button class="btn btn-sm btn-danger teleport-target-btn" data-player="${r.targetId}"><i class="fas fa-crosshairs"></i> Tp Reported</button>`:''}</div>`;
     const cb=card.querySelector('.claim-btn');
-    if(cb) cb.addEventListener('click',()=>showConfirm(`Claim report #${r.id}?`,()=>{nuiPost('claimReport',{reportId:r.id});showToast(`Claimed #${r.id}`,'warning');}));
+    if(cb) cb.addEventListener('click',()=>showConfirm(I18n.t('toast_claim_report',{id:r.id}),()=>{nuiPost('claimReport',{reportId:r.id});showToast(I18n.t('toast_claimed',{id:r.id}),'warning');}));
     const rb=card.querySelector('.resolve-btn');
-    if(rb) rb.addEventListener('click',()=>showConfirm(`Resolve report #${r.id}?`,()=>{nuiPost('resolveReport',{reportId:r.id});showToast(`Resolved #${r.id}`,'success');}));
+    if(rb) rb.addEventListener('click',()=>showConfirm(I18n.t('toast_resolve_report',{id:r.id}),()=>{nuiPost('resolveReport',{reportId:r.id});showToast(I18n.t('toast_resolved',{id:r.id}),'success');}));
     const tb=card.querySelector('.teleport-btn');
-    if(tb) tb.addEventListener('click',()=>{nuiPost('teleportToReporter',{playerId:parseInt(tb.dataset.player)});closeAdminPanel();showToast('Teleporting...','info',2500);});
+    if(tb) tb.addEventListener('click',()=>{nuiPost('teleportToReporter',{playerId:parseInt(tb.dataset.player)});closeAdminPanel();showToast(I18n.t('toast_teleporting'),'info',2500);});
     const tt=card.querySelector('.teleport-target-btn');
-    if(tt) tt.addEventListener('click',()=>{nuiPost('teleportToReporter',{playerId:parseInt(tt.dataset.player)});closeAdminPanel();showToast('Teleporting...','info',2500);});
+    if(tt) tt.addEventListener('click',()=>{nuiPost('teleportToReporter',{playerId:parseInt(tt.dataset.player)});closeAdminPanel();showToast(I18n.t('toast_teleporting'),'info',2500);});
     return card;
 }
 
@@ -192,7 +269,7 @@ function renderHistory(data, page) {
     const adminStats=Array.isArray(data.adminStats)?data.adminStats:[];
     State.historyTotal=data.total||0; State.historyPage=page||1;
     const tp=Math.max(1,Math.ceil(State.historyTotal/State.historyPageSize));
-    historyPageInfo.textContent=`Page ${State.historyPage} / ${tp} (${State.historyTotal} total)`;
+    historyPageInfo.textContent=I18n.t('page_info',{page:State.historyPage,total:tp,count:State.historyTotal});
     $id('history-prev').disabled=State.historyPage<=1;
     $id('history-next').disabled=State.historyPage>=tp;
     historyList.querySelectorAll('.history-card').forEach(c=>c.remove());
@@ -210,21 +287,25 @@ function buildHistoryCard(r) {
 }
 
 function renderAdminStats(rows) {
-    if(!rows||!rows.length){statsTbody.innerHTML='<tr><td colspan="7" class="stats-empty">No data yet</td></tr>';statsSummary.innerHTML='';return;}
+    if(!rows||!rows.length){
+        statsTbody.innerHTML=`<tr><td colspan="7" class="stats-empty">${escapeHtml(I18n.t('no_data'))}</td></tr>`;
+        statsSummary.innerHTML='';
+        return;
+    }
     const tot=rows.reduce((s,r)=>s+Number(r.total_resolved||0),0);
     const avg=rows.reduce((s,r)=>s+Number(r.avg_duration_sec||0),0)/rows.length;
     statsSummary.innerHTML=`
-        <div class="summary-card"><i class="fas fa-check-double"></i><span class="summary-val">${tot}</span><span class="summary-lbl">Total Resolved</span></div>
-        <div class="summary-card"><i class="fas fa-stopwatch"></i><span class="summary-val">${fmtDuration(avg)}</span><span class="summary-lbl">Avg Resolve Time</span></div>
-        <div class="summary-card"><i class="fas fa-trophy"></i><span class="summary-val">${escapeHtml(rows[0].admin_name)}</span><span class="summary-lbl">Top Resolver</span></div>
-        <div class="summary-card"><i class="fas fa-users-gear"></i><span class="summary-val">${rows.length}</span><span class="summary-lbl">Active Staff</span></div>`;
+        <div class="summary-card"><i class="fas fa-check-double"></i><span class="summary-val">${tot}</span><span class="summary-lbl">${escapeHtml(I18n.t('summary_total_resolved'))}</span></div>
+        <div class="summary-card"><i class="fas fa-stopwatch"></i><span class="summary-val">${fmtDuration(avg)}</span><span class="summary-lbl">${escapeHtml(I18n.t('summary_avg_time'))}</span></div>
+        <div class="summary-card"><i class="fas fa-trophy"></i><span class="summary-val">${escapeHtml(rows[0].admin_name)}</span><span class="summary-lbl">${escapeHtml(I18n.t('summary_top_resolver'))}</span></div>
+        <div class="summary-card"><i class="fas fa-users-gear"></i><span class="summary-val">${rows.length}</span><span class="summary-lbl">${escapeHtml(I18n.t('summary_active_staff'))}</span></div>`;
     const ck=['cat_cheating','cat_rdm','cat_vdm','cat_toxicity','cat_bug','cat_other'];
-    const cl={cat_cheating:'Cheating',cat_rdm:'RDM',cat_vdm:'VDM',cat_toxicity:'Toxicity',cat_bug:'Bug',cat_other:'Other'};
+    const clMap={cat_cheating:'cat_cheating',cat_rdm:'cat_rdm',cat_vdm:'cat_vdm',cat_toxicity:'cat_toxicity',cat_bug:'cat_bug',cat_other:'cat_other'};
     const f=document.createDocumentFragment();
     rows.forEach((row,i)=>{
         let tk=ck[0],tv=0; ck.forEach(k=>{if(Number(row[k]||0)>tv){tv=Number(row[k]||0);tk=k;}});
         const tr=document.createElement('tr'); if(i<3)tr.classList.add(`rank-${i+1}`);
-        tr.innerHTML=`<td class="rank-cell">${['🥇','🥈','🥉'][i]||i+1}</td><td class="admin-name-cell">${escapeHtml(row.admin_name)}</td><td class="num-cell">${row.total_resolved}</td><td class="dur-cell">${fmtDuration(row.avg_duration_sec)}</td><td class="dur-cell fast">${fmtDuration(row.min_duration_sec)}</td><td class="dur-cell slow">${fmtDuration(row.max_duration_sec)}</td><td><span class="cat-pill">${cl[tk]||'—'} (${tv})</span></td>`;
+        tr.innerHTML=`<td class="rank-cell">${['🥇','🥈','🥉'][i]||i+1}</td><td class="admin-name-cell">${escapeHtml(row.admin_name)}</td><td class="num-cell">${row.total_resolved}</td><td class="dur-cell">${fmtDuration(row.avg_duration_sec)}</td><td class="dur-cell fast">${fmtDuration(row.min_duration_sec)}</td><td class="dur-cell slow">${fmtDuration(row.max_duration_sec)}</td><td><span class="cat-pill">${escapeHtml(I18n.t(clMap[tk]||tk))} (${tv})</span></td>`;
         f.appendChild(tr);
     });
     statsTbody.innerHTML=''; statsTbody.appendChild(f);
@@ -237,7 +318,13 @@ window.addEventListener('message',function(e){
         case 'openReport': State.allPlayers=Array.isArray(d.players)?d.players:[]; buildCategories(Array.isArray(d.categories)?d.categories:[]); buildPlayerList(State.allPlayers); resetReportForm(); reportOverlay.classList.remove('hidden'); break;
         case 'openAdmin': renderReports(Array.isArray(d.reports)?d.reports:[]); adminOverlay.classList.remove('hidden'); break;
         case 'updateReports': if(Array.isArray(d.reports))renderReports(d.reports); break;
-        case 'newReportAlert': { const r=d.report;if(!r)break; showToast(`New Report #${r.id} — ${escapeHtml(r.categoryLabel||r.category)} from ${escapeHtml(r.reporterName)}`,'error',6000); const b=$id('refresh-reports');if(b){b.classList.add('btn-alert-pulse');setTimeout(()=>b.classList.remove('btn-alert-pulse'),3000);} break; }
+        case 'newReportAlert': {
+            const r=d.report; if(!r) break;
+            showToast(I18n.t('toast_new_report',{id:r.id,category:escapeHtml(r.categoryLabel||r.category),reporter:escapeHtml(r.reporterName)}),'error',6000);
+            const b=$id('refresh-reports');
+            if(b){b.classList.add('btn-alert-pulse');setTimeout(()=>b.classList.remove('btn-alert-pulse'),3000);}
+            break;
+        }
         case 'openHistory':
             State.historyPage=1;State.historySearch='';State.historyFilter='all';
             historySearchEl.value='';historyFilterEl.value='all';
@@ -248,6 +335,9 @@ window.addEventListener('message',function(e){
             historyOverlay.classList.remove('hidden'); break;
         case 'loadHistory': renderHistory(d.data||{},d.page||1); break;
         case 'closeAll': reportOverlay.classList.add('hidden');adminOverlay.classList.add('hidden');historyOverlay.classList.add('hidden');resetReportForm(); break;
+        case 'setLang':
+            if(d.lang==='tr'||d.lang==='en') I18n.setLocale(d.lang);
+            break;
     }
 });
 
@@ -259,5 +349,10 @@ document.addEventListener('keydown',function(e){
         if(!adminOverlay.classList.contains('hidden')){closeAdminPanel();nuiPost('escPressed');return;}
         if(!historyOverlay.classList.contains('hidden')){closeHistoryPanel();nuiPost('escPressed');return;}
     }
-    if(e.key==='r'&&(e.ctrlKey||e.metaKey)&&!adminOverlay.classList.contains('hidden')){e.preventDefault();nuiPost('refreshReports');showToast('Refreshing...','info',1500);}
+    if(e.key==='r'&&(e.ctrlKey||e.metaKey)&&!adminOverlay.classList.contains('hidden')){
+        e.preventDefault(); nuiPost('refreshReports'); showToast(I18n.t('toast_refreshing'),'info',1500);
+    }
 });
+
+// ── Boot ──
+I18n.init();

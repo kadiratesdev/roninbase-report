@@ -40,6 +40,52 @@ local Cooldowns   = {}   -- { [src] = os.time() }
 local RateBuckets = {}   -- { [src] = { count, window } }
 
 -- ─────────────────────────────────────────
+--  Locale sistemi (server tarafı)
+-- ─────────────────────────────────────────
+local Locale = {}
+
+local function LoadLocale(lang)
+    local ok, data = pcall(function()
+        return LoadResourceFile(GetCurrentResourceName(), 'locales/' .. lang .. '.lua')
+    end)
+    if ok and data then
+        local fn, err = load('return ' .. data)
+        if fn then
+            return fn()
+        else
+            print('^1[qb-report] Locale parse hatası (' .. lang .. '): ' .. tostring(err) .. '^0')
+        end
+    end
+    return nil
+end
+
+local function InitLocale()
+    local lang = ServerConfig.Locale or 'tr'
+    local data = LoadLocale(lang)
+    if not data then
+        print('^3[qb-report] ' .. lang .. ' server locale yüklenemedi, İngilizce\'ye düşülüyor.^0')
+        data = LoadLocale('en')
+    end
+    Locale = data or {}
+end
+
+-- ServerConfig yüklenince locale başlat
+CreateThread(function()
+    Wait(0)
+    InitLocale()
+end)
+
+local function T(key, vars)
+    local str = Locale[key] or key
+    if vars then
+        for k, v in pairs(vars) do
+            str = str:gsub('{' .. k .. '}', tostring(v))
+        end
+    end
+    return str
+end
+
+-- ─────────────────────────────────────────
 --  Log helper
 -- ─────────────────────────────────────────
 local function Log(msg)
@@ -215,7 +261,7 @@ RegisterNetEvent('qb-report:server:checkAdmin', function()
     if IsAdmin(src) then
         TriggerClientEvent('qb-report:client:openAdminPanel', src)
     else
-        TriggerClientEvent('qb-core:client:Notify', src, 'Bu komutu kullanma yetkiniz yok.', 'error', 4000)
+        TriggerClientEvent('qb-core:client:Notify', src, T('no_permission'), 'error', 4000)
         Log('Yetkisiz admin panel: src=' .. src)
     end
 end)
@@ -229,7 +275,7 @@ RegisterNetEvent('qb-report:server:checkSuperAdmin', function()
     if IsSuperAdmin(src) then
         TriggerClientEvent('qb-report:client:openHistoryPanel', src)
     else
-        TriggerClientEvent('qb-core:client:Notify', src, 'Bu komutu kullanma yetkiniz yok.', 'error', 4000)
+        TriggerClientEvent('qb-core:client:Notify', src, T('no_permission'), 'error', 4000)
         Log('Yetkisiz superadmin panel: src=' .. src)
     end
 end)
@@ -240,14 +286,12 @@ end)
 QBCore.Functions.CreateCallback('qb-report:server:getHistory', function(source, cb, params)
     if not IsSuperAdmin(source) then cb({ reports = {}, stats = {} }) return end
 
-    -- params: { page = 1, filter = 'all'|category, search = '' }
     local page   = tonumber((params or {}).page)   or 1
     local limit  = 20
     local offset = (page - 1) * limit
     local filter = type((params or {}).filter) == 'string' and Sanitize(params.filter, 32) or ''
     local search = type((params or {}).search) == 'string' and Sanitize(params.search, 64) or ''
 
-    -- WHERE koşulları
     local where  = "WHERE status = 'resolved'"
     local args   = {}
     if filter ~= '' and filter ~= 'all' then
@@ -262,7 +306,6 @@ QBCore.Functions.CreateCallback('qb-report:server:getHistory', function(source, 
     args['@limit']  = limit
     args['@offset'] = offset
 
-    -- Paralel: sayfa + istatistik
     local done    = 0
     local result  = {}
 
@@ -274,7 +317,6 @@ QBCore.Functions.CreateCallback('qb-report:server:getHistory', function(source, 
         end
     )
 
-    -- Admin bazlı istatistik
     MySQL.query([[
         SELECT
             resolved_by                                      AS admin_name,
@@ -298,7 +340,6 @@ QBCore.Functions.CreateCallback('qb-report:server:getHistory', function(source, 
         if done == 3 then cb(result) end
     end)
 
-    -- Toplam sayfa sayısı için COUNT
     MySQL.query('SELECT COUNT(*) AS total FROM qb_reports ' .. where, args,
         function(rows)
             result.total = rows and rows[1] and rows[1].total or 0
@@ -326,7 +367,7 @@ RegisterNetEvent('qb-report:server:submitReport', function(data)
 
     local desc = Sanitize(data.description, ServerConfig.MaxDescLength)
     if #desc < 5 then
-        TriggerClientEvent('qb-core:client:Notify', src, 'Lütfen daha açıklayıcı bir açıklama yazın (min. 5 karakter).', 'error', 4000)
+        TriggerClientEvent('qb-core:client:Notify', src, T('desc_too_short'), 'error', 4000)
         return
     end
 
@@ -364,7 +405,7 @@ RegisterNetEvent('qb-report:server:submitReport', function(data)
         claimedBy     = nil,
         claimedAt     = nil,
         timestamp     = Timestamp(),
-        createdAt     = createdAt,  -- unix timestamp (çözüm süresi için)
+        createdAt     = createdAt,
     }
 
     Reports[ReportId] = report
@@ -373,12 +414,12 @@ RegisterNetEvent('qb-report:server:submitReport', function(data)
     BroadcastToAdmins('qb-report:client:newReportAlert', report)
     BroadcastToAdmins('qb-report:client:refreshReports', GetReportList())
 
-    SendDiscord('🚨 Yeni Rapor #' .. ReportId, 'Bir oyuncu rapor gönderdi.',
+    SendDiscord(T('discord_new_report') .. ReportId, T('discord_new_report_desc'),
         ServerConfig.Discord.Colors.NewReport, {
-            { name = '📋 Kategori',  value = safeLabel,                                                          inline = true  },
-            { name = '👤 Raporlayan',value = reporterName .. ' (ID: ' .. src .. ')',                             inline = true  },
-            { name = '🎯 Raporlanan',value = targetName and (targetName .. ' (ID: ' .. targetId .. ')') or 'Belirtilmedi', inline = false },
-            { name = '📝 Açıklama', value = desc,                                                               inline = false },
+            { name = T('discord_field_category'),    value = safeLabel,                                                                                               inline = true  },
+            { name = T('discord_field_reporter'),    value = reporterName .. ' (ID: ' .. src .. ')',                                                                  inline = true  },
+            { name = T('discord_field_target'),      value = targetName and (targetName .. ' (ID: ' .. targetId .. ')') or T('discord_field_not_specified'),           inline = false },
+            { name = T('discord_field_description'), value = desc,                                                                                                    inline = false },
         }
     )
     Log('Yeni rapor #' .. ReportId .. ' | ' .. reporterName .. ' | ' .. data.category)
@@ -413,15 +454,15 @@ RegisterNetEvent('qb-report:server:claimReport', function(reportId)
     r.claimedAt = os.time()
 
     if r.reporterId and QBCore.Functions.GetPlayer(r.reporterId) then
-        TriggerClientEvent('qb-core:client:Notify', r.reporterId, 'Bir yetkili raporunuzu üstlendi.', 'success', 6000)
+        TriggerClientEvent('qb-core:client:Notify', r.reporterId, T('report_claimed'), 'success', 6000)
     end
 
     BroadcastToAdmins('qb-report:client:refreshReports', GetReportList())
 
-    SendDiscord('🔔 Rapor #' .. reportId .. ' Üstlenildi', '', ServerConfig.Discord.Colors.Claimed, {
-        { name = '🆔 Rapor ID',  value = tostring(reportId), inline = true },
-        { name = '👮 Yetkili',   value = r.claimedBy,        inline = true },
-        { name = '📋 Kategori',  value = r.categoryLabel,    inline = false },
+    SendDiscord(T('discord_new_report') .. reportId .. T('discord_claimed'), '', ServerConfig.Discord.Colors.Claimed, {
+        { name = T('discord_field_report_id'), value = tostring(reportId), inline = true  },
+        { name = T('discord_field_admin'),     value = r.claimedBy,        inline = true  },
+        { name = T('discord_field_category'),  value = r.categoryLabel,    inline = false },
     })
     Log('Rapor #' .. reportId .. ' üstlenildi → ' .. r.claimedBy)
 end)
@@ -444,14 +485,12 @@ RegisterNetEvent('qb-report:server:resolveReport', function(reportId)
     local resolvedAt   = os.time()
     local resolvedAtDT = os.date('%Y-%m-%d %H:%M:%S', resolvedAt)
     local claimedAtDT  = r.claimedAt and os.date('%Y-%m-%d %H:%M:%S', r.claimedAt) or nil
-    local duration     = resolvedAt - (r.createdAt or resolvedAt)  -- saniye
+    local duration     = resolvedAt - (r.createdAt or resolvedAt)
 
-    -- Raporlayan oyuncuya bildir
     if r.reporterId and QBCore.Functions.GetPlayer(r.reporterId) then
-        TriggerClientEvent('qb-core:client:Notify', r.reporterId, 'Raporunuz bir yetkili tarafından çözüldü.', 'success', 6000)
+        TriggerClientEvent('qb-core:client:Notify', r.reporterId, T('report_resolved'), 'success', 6000)
     end
 
-    -- DB'ye kaydet (tüm alanlar)
     MySQL.query([[
         INSERT INTO qb_reports
             (id, category, category_label, description, reporter_id, reporter_name,
@@ -485,17 +524,20 @@ RegisterNetEvent('qb-report:server:resolveReport', function(reportId)
         ['@createdAt']  = os.date('%Y-%m-%d %H:%M:%S', r.createdAt or resolvedAt),
     }, function() end)
 
-    -- Bellekten anında sil (aktif listede görünmez)
     Reports[reportId] = nil
 
     BroadcastToAdmins('qb-report:client:refreshReports', GetReportList())
 
-    SendDiscord('✅ Rapor #' .. reportId .. ' Çözüldü', '', ServerConfig.Discord.Colors.Resolved, {
-        { name = '🆔 Rapor ID',  value = tostring(reportId),                              inline = true  },
-        { name = '👮 Kapatan',   value = resolvedBy,                                      inline = true  },
-        { name = '⏱️ Süre',     value = math.floor(duration / 60) .. ' dk ' .. (duration % 60) .. ' sn', inline = true  },
-        { name = '📋 Kategori', value = r.categoryLabel,                                  inline = false },
-        { name = '📝 Açıklama', value = r.description,                                    inline = false },
+    local durMin = math.floor(duration / 60)
+    local durSec = duration % 60
+    local durStr = T('discord_duration_fmt', { min = durMin, sec = durSec })
+
+    SendDiscord(T('discord_new_report') .. reportId .. T('discord_resolved'), '', ServerConfig.Discord.Colors.Resolved, {
+        { name = T('discord_field_report_id'),   value = tostring(reportId), inline = true  },
+        { name = T('discord_field_closer'),      value = resolvedBy,         inline = true  },
+        { name = T('discord_field_duration'),    value = durStr,             inline = true  },
+        { name = T('discord_field_category'),    value = r.categoryLabel,    inline = false },
+        { name = T('discord_field_description'), value = r.description,      inline = false },
     })
     Log('Rapor #' .. reportId .. ' çözüldü → ' .. resolvedBy .. ' (' .. duration .. 's)')
 end)

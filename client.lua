@@ -9,6 +9,67 @@ local isAdminOpen     = false
 local isHistoryOpen   = false
 
 -- ─────────────────────────────────────────
+--  Locale sistemi
+-- ─────────────────────────────────────────
+local Locale = {}
+
+local function LoadLocale(lang)
+    local ok, data = pcall(function()
+        return LoadResourceFile(GetCurrentResourceName(), 'locales/' .. lang .. '.lua')
+    end)
+    if ok and data then
+        local fn, err = load('return ' .. data)
+        if fn then
+            return fn()
+        else
+            print('^1[qb-report] Locale parse hatası (' .. lang .. '): ' .. tostring(err) .. '^0')
+        end
+    end
+    return nil
+end
+
+-- Önce seçilen dili yükle, başarısız olursa 'en' fallback
+local function InitLocale()
+    local lang = Config.Locale or 'en'
+    local data = LoadLocale(lang)
+    if not data then
+        print('^3[qb-report] ' .. lang .. ' locale yüklenemedi, İngilizce\'ye düşülüyor.^0')
+        data = LoadLocale('en')
+    end
+    Locale = data or {}
+end
+
+InitLocale()
+
+-- Çeviri fonksiyonu ({key} placeholder desteği)
+local function T(key, vars)
+    local str = Locale[key] or key
+    if vars then
+        for k, v in pairs(vars) do
+            str = str:gsub('{' .. k .. '}', tostring(v))
+        end
+    end
+    return str
+end
+
+-- ─────────────────────────────────────────
+--  Kategori etiketlerini locale'den doldur
+-- ─────────────────────────────────────────
+local function GetCategories()
+    local cats = {}
+    for _, v in ipairs(Config.Categories) do
+        local label = T('cat_' .. v.id)
+        cats[#cats + 1] = {
+            id    = v.id,
+            label = label,
+            icon  = v.icon,
+            color = v.color,
+        }
+    end
+    return cats
+end
+
+-- ─────────────────────────────────────────
 --  NUI'yi kapat
 -- ─────────────────────────────────────────
 local function CloseNUI()
@@ -20,15 +81,6 @@ local function CloseNUI()
 end
 
 -- ─────────────────────────────────────────
---  Kategori listesi
--- ─────────────────────────────────────────
-local function GetCategories()
-    local cats = {}
-    for _, v in ipairs(Config.Categories) do cats[#cats + 1] = v end
-    return cats
-end
-
--- ─────────────────────────────────────────
 --  Rapor menüsü
 -- ─────────────────────────────────────────
 local function OpenReportMenu()
@@ -36,6 +88,8 @@ local function OpenReportMenu()
     QBCore.Functions.TriggerCallback('qb-report:server:getPlayers', function(players)
         isNUIOpen = true
         SetNuiFocus(true, true)
+        -- NUI'ye dil bilgisini de gönder
+        SendNUIMessage({ action = 'setLang', lang = Config.Locale or 'en' })
         SendNUIMessage({ action = 'openReport', categories = GetCategories(), players = players })
     end)
 end
@@ -47,6 +101,7 @@ local function OpenAdminPanel(reports)
     if isNUIOpen or isAdminOpen or isHistoryOpen then return end
     isAdminOpen = true
     SetNuiFocus(true, true)
+    SendNUIMessage({ action = 'setLang', lang = Config.Locale or 'en' })
     SendNUIMessage({ action = 'openAdmin', reports = reports })
 end
 
@@ -57,6 +112,7 @@ local function OpenHistoryPanel()
     if isNUIOpen or isAdminOpen or isHistoryOpen then return end
     isHistoryOpen = true
     SetNuiFocus(true, true)
+    SendNUIMessage({ action = 'setLang', lang = Config.Locale or 'en' })
     SendNUIMessage({ action = 'openHistory' })
     -- İlk sayfa verilerini hemen yükle
     QBCore.Functions.TriggerCallback('qb-report:server:getHistory', function(data)
@@ -97,13 +153,13 @@ end)
 
 RegisterNetEvent('qb-report:client:reportSent', function()
     CloseNUI()
-    QBCore.Functions.Notify(Config.Notifications.ReportSent, 'success', 5000)
+    QBCore.Functions.Notify(T('report_sent'), 'success', 5000)
 end)
 
 RegisterNetEvent('qb-report:client:cooldown', function(remaining)
     remaining = tonumber(remaining) or 0
     CloseNUI()
-    QBCore.Functions.Notify('Tekrar rapor göndermek için ' .. remaining .. ' saniye beklemeniz gerekiyor.', 'error', 4000)
+    QBCore.Functions.Notify(T('cooldown', { seconds = remaining }), 'error', 4000)
 end)
 
 RegisterNetEvent('qb-report:client:refreshReports', function(reports)
@@ -116,7 +172,7 @@ end)
 RegisterNetEvent('qb-report:client:newReportAlert', function(report)
     if type(report) ~= 'table' then return end
     SendNUIMessage({ action = 'newReportAlert', report = report })
-    QBCore.Functions.Notify(Config.Notifications.AdminNotify, 'primary', 5000)
+    QBCore.Functions.Notify(T('admin_notify'), 'primary', 5000)
 end)
 
 RegisterNetEvent('qb-report:client:teleportCoords', function(coords)

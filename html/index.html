@@ -8,8 +8,54 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <style>
+        .lang-switcher {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            z-index: 9999;
+            display: flex;
+            gap: 4px;
+            background: rgba(15,15,20,0.85);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            padding: 4px;
+            backdrop-filter: blur(8px);
+        }
+        .lang-btn {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: none;
+            background: transparent;
+            color: rgba(255,255,255,0.5);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-family: 'Inter', sans-serif;
+        }
+        .lang-btn:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85); }
+        .lang-btn.active { background: rgba(255,255,255,0.12); color: #fff; }
+        .lang-btn .lang-flag { font-size: 14px; }
+    </style>
 </head>
 <body>
+
+<!-- ════════════════════════════════════════
+     LANGUAGE SWITCHER
+═════════════════════════════════════════ -->
+<div class="lang-switcher" id="lang-switcher">
+    <button class="lang-btn active" data-lang="en" id="lang-btn-en">
+        <span class="lang-flag">🇬🇧</span> EN
+    </button>
+    <button class="lang-btn" data-lang="tr" id="lang-btn-tr">
+        <span class="lang-flag">🇹🇷</span> TR
+    </button>
+</div>
+
 
 <!-- ════════════════════════════════════════
      REPORT MODAL
@@ -20,8 +66,8 @@
             <div class="modal-title">
                 <div class="title-icon"><i class="fas fa-flag"></i></div>
                 <div>
-                    <h2>Submit a Report</h2>
-                    <p class="subtitle">Our staff team will review it promptly</p>
+                    <h2 data-i18n="report_modal_title">Submit a Report</h2>
+                    <p class="subtitle" data-i18n="report_modal_subtitle">Our staff team will review it promptly</p>
                 </div>
             </div>
             <button class="close-btn" id="close-report"><i class="fas fa-times"></i></button>
@@ -30,19 +76,19 @@
             <div class="step">
                 <div class="step-header">
                     <span class="step-badge">1</span>
-                    <h3>Select a Category</h3>
+                    <h3 data-i18n="step1_title">Select a Category</h3>
                 </div>
                 <div class="category-grid" id="category-grid"></div>
             </div>
             <div class="step">
                 <div class="step-header">
                     <span class="step-badge">2</span>
-                    <h3>Report a Specific Player? <span class="optional-tag">Optional</span></h3>
+                    <h3><span data-i18n="step2_title">Report a Specific Player?</span> <span class="optional-tag" data-i18n="step2_optional">Optional</span></h3>
                 </div>
                 <div class="player-search-wrapper">
                     <div class="search-box">
                         <i class="fas fa-search search-icon"></i>
-                        <input type="text" id="player-search" placeholder="Search by name or ID..." autocomplete="off" />
+                        <input type="text" id="player-search" data-i18n-placeholder="player_search_placeholder" placeholder="Search by name or ID..." autocomplete="off" />
                     </div>
                     <div class="player-list" id="player-list"></div>
                     <div class="selected-player hidden" id="selected-player-display">
@@ -55,17 +101,17 @@
             <div class="step">
                 <div class="step-header">
                     <span class="step-badge">3</span>
-                    <h3>Describe the Issue</h3>
+                    <h3 data-i18n="step3_title">Describe the Issue</h3>
                 </div>
                 <div class="textarea-wrapper">
-                    <textarea id="report-description" placeholder="Provide as much detail as possible. What happened? Where? When?" maxlength="500"></textarea>
+                    <textarea id="report-description" data-i18n-placeholder="desc_placeholder" placeholder="Provide as much detail as possible. What happened? Where? When?" maxlength="500"></textarea>
                     <div class="char-counter"><span id="char-count">0</span> / 500</div>
                 </div>
             </div>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-ghost" id="cancel-report"><i class="fas fa-ban"></i> Cancel</button>
-            <button class="btn btn-primary" id="submit-report" disabled><i class="fas fa-paper-plane"></i> Submit Report</button>
+            <button class="btn btn-ghost" id="cancel-report"><i class="fas fa-ban"></i> <span data-i18n="btn_cancel">Cancel</span></button>
+            <button class="btn btn-primary" id="submit-report" disabled><i class="fas fa-paper-plane"></i> <span data-i18n="btn_submit">Submit Report</span></button>
         </div>
     </div>
 </div>
@@ -80,31 +126,31 @@
             <div class="modal-title">
                 <div class="title-icon admin-icon"><i class="fas fa-shield-halved"></i></div>
                 <div>
-                    <h2>Admin Panel</h2>
-                    <p class="subtitle">Manage player reports</p>
+                    <h2 data-i18n="admin_panel_title">Admin Panel</h2>
+                    <p class="subtitle" data-i18n="admin_panel_subtitle">Manage player reports</p>
                 </div>
             </div>
             <div class="admin-header-actions">
-                <button class="btn btn-sm btn-outline" id="refresh-reports"><i class="fas fa-rotate-right"></i> Refresh</button>
+                <button class="btn btn-sm btn-outline" id="refresh-reports"><i class="fas fa-rotate-right"></i> <span data-i18n="btn_refresh">Refresh</span></button>
                 <button class="close-btn" id="close-admin"><i class="fas fa-times"></i></button>
             </div>
         </div>
         <div class="stats-bar">
-            <div class="stat-item"><span class="stat-value" id="stat-total">0</span><span class="stat-label">Total</span></div>
+            <div class="stat-item"><span class="stat-value" id="stat-total">0</span><span class="stat-label" data-i18n="stat_total">Total</span></div>
             <div class="stat-divider"></div>
-            <div class="stat-item"><span class="stat-value open" id="stat-open">0</span><span class="stat-label">Open</span></div>
+            <div class="stat-item"><span class="stat-value open" id="stat-open">0</span><span class="stat-label" data-i18n="stat_open">Open</span></div>
             <div class="stat-divider"></div>
-            <div class="stat-item"><span class="stat-value claimed" id="stat-claimed">0</span><span class="stat-label">Claimed</span></div>
+            <div class="stat-item"><span class="stat-value claimed" id="stat-claimed">0</span><span class="stat-label" data-i18n="stat_claimed">Claimed</span></div>
         </div>
         <div class="filter-tabs">
-            <button class="tab-btn active" data-filter="all">All</button>
-            <button class="tab-btn" data-filter="open">Open</button>
-            <button class="tab-btn" data-filter="claimed">Claimed</button>
+            <button class="tab-btn active" data-filter="all" data-i18n="tab_all">All</button>
+            <button class="tab-btn" data-filter="open" data-i18n="tab_open">Open</button>
+            <button class="tab-btn" data-filter="claimed" data-i18n="tab_claimed">Claimed</button>
         </div>
         <div class="report-list" id="report-list">
             <div class="empty-state" id="empty-state">
                 <i class="fas fa-inbox"></i>
-                <p>No reports found</p>
+                <p data-i18n="no_reports">No reports found</p>
             </div>
         </div>
     </div>
@@ -120,8 +166,8 @@
             <div class="modal-title">
                 <div class="title-icon history-icon"><i class="fas fa-clock-rotate-left"></i></div>
                 <div>
-                    <h2>Report History</h2>
-                    <p class="subtitle">Resolved reports &amp; staff statistics</p>
+                    <h2 data-i18n="history_panel_title">Report History</h2>
+                    <p class="subtitle" data-i18n="history_panel_subtitle">Resolved reports &amp; staff statistics</p>
                 </div>
             </div>
             <button class="close-btn" id="close-history"><i class="fas fa-times"></i></button>
@@ -129,8 +175,8 @@
 
         <!-- Tab bar -->
         <div class="history-tabs">
-            <button class="history-tab active" data-tab="history"><i class="fas fa-list"></i> History</button>
-            <button class="history-tab" data-tab="stats"><i class="fas fa-chart-bar"></i> Staff Stats</button>
+            <button class="history-tab active" data-tab="history"><i class="fas fa-list"></i> <span data-i18n="tab_history">History</span></button>
+            <button class="history-tab" data-tab="stats"><i class="fas fa-chart-bar"></i> <span data-i18n="tab_stats">Staff Stats</span></button>
         </div>
 
         <!-- History tab -->
@@ -138,22 +184,22 @@
             <div class="history-toolbar">
                 <div class="search-box" style="flex:1">
                     <i class="fas fa-search search-icon"></i>
-                    <input type="text" id="history-search" placeholder="Search reporter, admin, description..." autocomplete="off" />
+                    <input type="text" id="history-search" data-i18n-placeholder="history_search_placeholder" placeholder="Search reporter, admin, description..." autocomplete="off" />
                 </div>
                 <select id="history-filter" class="history-select">
-                    <option value="all">All Categories</option>
-                    <option value="cheating">Cheating</option>
-                    <option value="rdm">RDM</option>
-                    <option value="vdm">VDM</option>
-                    <option value="toxicity">Toxicity</option>
-                    <option value="bug">Bug</option>
-                    <option value="other">Other</option>
+                    <option value="all" data-i18n="filter_all_categories">All Categories</option>
+                    <option value="cheating" data-i18n="filter_cheating">Cheating</option>
+                    <option value="rdm" data-i18n="filter_rdm">RDM</option>
+                    <option value="vdm" data-i18n="filter_vdm">VDM</option>
+                    <option value="toxicity" data-i18n="filter_toxicity">Toxicity</option>
+                    <option value="bug" data-i18n="filter_bug">Bug</option>
+                    <option value="other" data-i18n="filter_other">Other</option>
                 </select>
             </div>
             <div class="history-list" id="history-list">
                 <div class="empty-state" id="history-empty">
                     <i class="fas fa-inbox"></i>
-                    <p>No resolved reports found</p>
+                    <p data-i18n="no_resolved_reports">No resolved reports found</p>
                 </div>
             </div>
             <div class="history-pagination">
@@ -171,16 +217,16 @@
                     <thead>
                         <tr>
                             <th>#</th>
-                            <th>Admin</th>
-                            <th>Resolved</th>
-                            <th>Avg Time</th>
-                            <th>Fastest</th>
-                            <th>Slowest</th>
-                            <th>Top Category</th>
+                            <th data-i18n="th_admin">Admin</th>
+                            <th data-i18n="th_resolved">Resolved</th>
+                            <th data-i18n="th_avg_time">Avg Time</th>
+                            <th data-i18n="th_fastest">Fastest</th>
+                            <th data-i18n="th_slowest">Slowest</th>
+                            <th data-i18n="th_top_category">Top Category</th>
                         </tr>
                     </thead>
                     <tbody id="stats-tbody">
-                        <tr><td colspan="7" class="stats-empty">No data yet</td></tr>
+                        <tr><td colspan="7" class="stats-empty" data-i18n="no_data">No data yet</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -202,10 +248,10 @@
 <div id="confirm-overlay" class="confirm-overlay hidden">
     <div class="confirm-dialog">
         <div class="confirm-icon"><i class="fas fa-triangle-exclamation"></i></div>
-        <p class="confirm-message" id="confirm-message">Are you sure?</p>
+        <p class="confirm-message" id="confirm-message" data-i18n="confirm_title">Are you sure?</p>
         <div class="confirm-actions">
-            <button class="btn btn-ghost btn-sm" id="confirm-cancel">Cancel</button>
-            <button class="btn btn-primary btn-sm" id="confirm-ok">Confirm</button>
+            <button class="btn btn-ghost btn-sm" id="confirm-cancel" data-i18n="btn_confirm_cancel">Cancel</button>
+            <button class="btn btn-primary btn-sm" id="confirm-ok" data-i18n="btn_confirm_ok">Confirm</button>
         </div>
     </div>
 </div>

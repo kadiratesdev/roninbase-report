@@ -5,6 +5,10 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 ServerConfig = {}
 
+-- ── Dil ayarı (server tarafı bildirimleri ve Discord için) ───────────────────
+-- 'tr' = Türkçe  |  'en' = English
+ServerConfig.Locale = 'tr'
+
 -- ── Genel ────────────────────────────────────────────────────────────────────
 ServerConfig.Cooldown       = 120    -- Rapor gönderme bekleme süresi (saniye)
 ServerConfig.MaxDescLength  = 500    -- Açıklama maksimum karakter
