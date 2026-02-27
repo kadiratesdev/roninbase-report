@@ -10,7 +10,12 @@ ServerConfig.Cooldown       = 120    -- Rapor gönderme bekleme süresi (saniye)
 ServerConfig.MaxDescLength  = 500    -- Açıklama maksimum karakter
 ServerConfig.MaxReports     = 200    -- Bellekte tutulacak maksimum rapor sayısı
 
--- ── Admin Grupları ────────────────────────────────────────────────────────────
+-- ── Admin Grupları (QBCore fallback) ─────────────────────────────────────────
+-- Öncelikli yöntem: server.cfg'de ACE permission tanımı
+--   add_ace group.admin    rb-report.admin allow
+--   add_ace group.mod      rb-report.admin allow
+--   add_ace group.superadmin rb-report.admin allow
+-- ACE izni yoksa aşağıdaki QBCore grupları fallback olarak kullanılır.
 ServerConfig.AdminGroups = {
     'admin',
     'superadmin',

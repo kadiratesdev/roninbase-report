@@ -81,22 +81,36 @@ local function RateLimit(src)
 end
 
 -- ─────────────────────────────────────────
---  Admin kontrolü
---  QBCore.Functions.GetPermission bir string döner;
---  HasPermission de kullanılabilir ama her grup için
---  ayrı çağrı yapar. Tek GetPermission çağrısı + set
---  lookup daha verimli.
+--  Admin kontrolü — çift katman:
+--
+--  1. IsPlayerAceAllowed (FiveM native)
+--     server.cfg'de "add_ace group.admin command.rb-report allow" gibi
+--     bir satır varsa bu direkt true döner. QBCore'dan bağımsız,
+--     en güvenilir ve en hızlı yöntem.
+--
+--  2. QBCore.Functions.HasPermission (fallback)
+--     ACE izni tanımlanmamış sunucularda QBCore'un kendi
+--     grup sistemine düşer. ServerConfig.AdminGroups listesindeki
+--     her grup için tek tek kontrol yapar.
+--
+--  Herhangi biri true dönerse oyuncu admin sayılır.
 -- ─────────────────────────────────────────
-local AdminGroupSet = {}
-for _, g in ipairs(ServerConfig.AdminGroups) do
-    AdminGroupSet[g] = true
-end
-
 local function IsAdmin(src)
     if not src or src <= 0 then return false end
-    if not QBCore.Functions.GetPlayer(src) then return false end
-    local group = QBCore.Functions.GetPermission(src)
-    return AdminGroupSet[group] == true
+
+    -- 1. ACE permission kontrolü (server.cfg tabanlı)
+    if IsPlayerAceAllowed(tostring(src), 'rb-report.admin') then
+        return true
+    end
+
+    -- 2. QBCore.Functions.HasPermission fallback
+    for _, group in ipairs(ServerConfig.AdminGroups) do
+        if QBCore.Functions.HasPermission(src, group) then
+            return true
+        end
+    end
+
+    return false
 end
 
 -- ─────────────────────────────────────────
