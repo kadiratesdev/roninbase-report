@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Report System</title>
+    <link rel="stylesheet" href="assets/css/style.css" />
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+</head>
+<body>
+
+<!-- ════════════════════════════════════════
+     REPORT MODAL
+═════════════════════════════════════════ -->
+<div id="report-overlay" class="overlay hidden">
+    <div class="modal report-modal" id="report-modal">
+
+        <!-- Header -->
+        <div class="modal-header">
+            <div class="modal-title">
+                <div class="title-icon"><i class="fas fa-flag"></i></div>
+                <div>
+                    <h2>Submit a Report</h2>
+                    <p class="subtitle">Our staff team will review it promptly</p>
+                </div>
+            </div>
+            <button class="close-btn" id="close-report"><i class="fas fa-times"></i></button>
+        </div>
+
+        <!-- Body -->
+        <div class="modal-body">
+
+            <!-- Step 1: Category -->
+            <div class="step" id="step-1">
+                <div class="step-header">
+                    <span class="step-badge">1</span>
+                    <h3>Select a Category</h3>
+                </div>
+                <div class="category-grid" id="category-grid">
+                    <!-- Injected by JS -->
+                </div>
+            </div>
+
+            <!-- Step 2: Report Player (optional) -->
+            <div class="step" id="step-2">
+                <div class="step-header">
+                    <span class="step-badge">2</span>
+                    <h3>Report a Specific Player? <span class="optional-tag">Optional</span></h3>
+                </div>
+                <div class="player-search-wrapper">
+                    <div class="search-box">
+                        <i class="fas fa-search search-icon"></i>
+                        <input type="text" id="player-search" placeholder="Search by name or ID..." autocomplete="off" />
+                    </div>
+                    <div class="player-list" id="player-list">
+                        <!-- Injected by JS -->
+                    </div>
+                    <div class="selected-player hidden" id="selected-player-display">
+                        <i class="fas fa-user-check"></i>
+                        <span id="selected-player-name">None</span>
+                        <button class="clear-player-btn" id="clear-player"><i class="fas fa-times"></i></button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3: Description -->
+            <div class="step" id="step-3">
+                <div class="step-header">
+                    <span class="step-badge">3</span>
+                    <h3>Describe the Issue</h3>
+                </div>
+                <div class="textarea-wrapper">
+                    <textarea id="report-description"
+                              placeholder="Provide as much detail as possible. What happened? Where? When?"
+                              maxlength="500"></textarea>
+                    <div class="char-counter"><span id="char-count">0</span> / 500</div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Footer -->
+        <div class="modal-footer">
+            <button class="btn btn-ghost" id="cancel-report">
+                <i class="fas fa-ban"></i> Cancel
+            </button>
+            <button class="btn btn-primary" id="submit-report" disabled>
+                <i class="fas fa-paper-plane"></i> Submit Report
+            </button>
+        </div>
+
+    </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     ADMIN PANEL MODAL
+═════════════════════════════════════════ -->
+<div id="admin-overlay" class="overlay hidden">
+    <div class="modal admin-modal" id="admin-modal">
+
+        <!-- Header -->
+        <div class="modal-header">
+            <div class="modal-title">
+                <div class="title-icon admin-icon"><i class="fas fa-shield-halved"></i></div>
+                <div>
+                    <h2>Admin Panel</h2>
+                    <p class="subtitle">Manage player reports</p>
+                </div>
+            </div>
+            <div class="admin-header-actions">
+                <button class="btn btn-sm btn-outline" id="refresh-reports">
+                    <i class="fas fa-rotate-right"></i> Refresh
+                </button>
+                <button class="close-btn" id="close-admin"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-item">
+                <span class="stat-value" id="stat-total">0</span>
+                <span class="stat-label">Total</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <span class="stat-value open" id="stat-open">0</span>
+                <span class="stat-label">Open</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <span class="stat-value claimed" id="stat-claimed">0</span>
+                <span class="stat-label">Claimed</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <span class="stat-value resolved" id="stat-resolved">0</span>
+                <span class="stat-label">Resolved</span>
+            </div>
+        </div>
+
+        <!-- Filter Tabs -->
+        <div class="filter-tabs">
+            <button class="tab-btn active" data-filter="all">All</button>
+            <button class="tab-btn" data-filter="open">Open</button>
+            <button class="tab-btn" data-filter="claimed">Claimed</button>
+            <button class="tab-btn" data-filter="resolved">Resolved</button>
+        </div>
+
+        <!-- Report List -->
+        <div class="report-list" id="report-list">
+            <div class="empty-state" id="empty-state">
+                <i class="fas fa-inbox"></i>
+                <p>No reports found</p>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     TOAST NOTIFICATION
+═════════════════════════════════════════ -->
+<div class="toast-container" id="toast-container"></div>
+
+
+<script src="assets/js/app.js"></script>
+</body>
+</html>
