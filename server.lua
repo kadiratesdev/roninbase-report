@@ -660,7 +660,59 @@ RegisterNetEvent('qb-report:server:getReports', function()
     local src = source
     if RateLimit(src) then return end
     if not IsAdmin(src) then Log('Yetkisiz getReports: src=' .. src) return end
-    TriggerClientEvent('qb-report:client:receiveReports', src, GetReportList())
+    
+    -- Veritabanından aktif raporları çek (open, claimed, in_progress)
+    MySQL.query([[
+        SELECT
+            r.*,
+            COALESCE(p_claim.name, r.claimed_by) AS claimed_by_display
+        FROM qb_reports r
+        LEFT JOIN players p_claim ON p_claim.license = r.claimed_by
+        WHERE r.status IN ('open', 'claimed', 'in_progress')
+        ORDER BY r.created_at DESC
+    ]], {}, function(activeReports)
+        local reports = {}
+        if activeReports and #activeReports > 0 then
+            for _, row in ipairs(activeReports) do
+                local created_ts = os.time()
+                if type(row.created_at) == "number" then
+                    created_ts = row.created_at > 10000000000 and math.floor(row.created_at / 1000) or row.created_at
+                elseif type(row.created_at) == "string" then
+                    local y, m, d, h, min, s = row.created_at:match("(%d+)-(%d+)-(%d+) (%d+):(%d+):(%d+)")
+                    if y and m and d and h and min and s then
+                        created_ts = os.time({year=y, month=m, day=d, hour=h, min=min, sec=s})
+                    end
+                end
+                
+                reports[#reports + 1] = {
+                    id = row.id,
+                    category = row.category,
+                    categoryLabel = row.category_label,
+                    description = row.description,
+                    reporterId = row.reporter_id,
+                    reporterName = row.reporter_name,
+                    targetId = row.target_id,
+                    targetName = row.target_name,
+                    status = row.status,
+                    claimedBy = row.claimed_by_display or row.claimed_by,
+                    claimedByLicense = row.claimed_by,
+                    claimedAt = row.claimed_at,
+                    timestamp = row.created_at and tostring(row.created_at) or tostring(os.time()),
+                    createdAt = created_ts
+                }
+            end
+        end
+        
+        -- Bellekteki raporları da güncelle (senkronizasyon için)
+        for _, report in ipairs(reports) do
+            Reports[report.id] = report
+        end
+        
+        -- ID'ye göre sırala
+        table.sort(reports, function(a, b) return a.id > b.id end)
+        
+        TriggerClientEvent('qb-report:client:receiveReports', src, reports)
+    end)
 end)
 
 -- ═════════════════════════════════════════

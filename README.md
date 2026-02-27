@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="https://i.imgur.com/HcZHHUR.png" width="80" height="80" alt="qb-report logo" />
+<img src="https://i.imgur.com/HcZHHUR.png" width="80" height="80" alt="roninbase-report logo" />
 
-# qb-report
+# roninbase-report
 
 **A modern, feature-rich player report system for QBCore FiveM servers**
 
@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
 [![i18n](https://img.shields.io/badge/i18n-TR%20%7C%20EN-purple?style=for-the-badge)](#-multi-language)
 
-[Features](#-features) · [Preview](#-preview) · [Installation](#-installation) · [Configuration](#-configuration) · [Commands](#-commands) · [Multi-Language](#-multi-language)
+[Features](#-features) · [Installation](#-installation) · [Configuration](#-configuration) · [Commands](#-commands) · [Multi-Language](#-multi-language)
 
 </div>
 
@@ -19,8 +19,8 @@
 
 ## ✨ Features
 
-| | |
-|---|---|
+| | | |
+|---|---|---|
 | 🎨 **Beautiful NUI** | Modern glassmorphism design with smooth animations |
 | 📋 **Category System** | 6 built-in report categories with custom icons & colors |
 | 👮 **Admin Panel** | Real-time report management with claim/resolve/teleport |
@@ -30,19 +30,10 @@
 | 🛡️ **Rate Limiting** | Flood protection with per-player event buckets |
 | ⏱️ **Cooldown System** | Configurable cooldown between player reports |
 | 🔐 **ACE Permissions** | ACE-first permission system with QBCore group fallback |
-| 💾 **MySQL Persistent** | All resolved reports saved to database via oxmysql |
+| 💾 **MySQL Persistent** | All reports (active & resolved) saved to database via oxmysql |
+| 🚫 **Validation** | Prevents multiple active reports from the same player |
 
 ---
-
-## 📸 Preview
-
-<div align="center">
-
-| Report Modal | Admin Panel | History & Stats |
-|:---:|:---:|:---:|
-| ![Report](.github/preview_report.png) | ![Admin](.github/preview_admin.png) | ![History](.github/preview_history.png) |
-
-</div>
 
 > **NUI built with vanilla HTML/CSS/JS** — zero external frameworks, optimized for FiveM's CEF renderer.
 
@@ -52,7 +43,7 @@
 
 ### 1. Dependencies
 
-Make sure these resources are installed and started **before** `qb-report`:
+Make sure these resources are installed and started **before** `roninbase-report`:
 
 - [`qb-core`](https://github.com/qbcore-framework/qb-core)
 - [`oxmysql`](https://github.com/overextended/oxmysql)
@@ -61,7 +52,7 @@ Make sure these resources are installed and started **before** `qb-report`:
 
 ```bash
 # Clone into your resources folder
-git clone https://github.com/kadiratesdev/roninbase-report.git [qb-report]
+git clone https://github.com/kadiratesdev/roninbase-report.git
 ```
 
 Or download the latest release as a ZIP and extract it into your `resources/` directory.
@@ -69,7 +60,7 @@ Or download the latest release as a ZIP and extract it into your `resources/` di
 ### 3. Add to server.cfg
 
 ```cfg
-ensure qb-report
+ensure roninbase-report
 ```
 
 ### 4. ACE Permissions (Recommended)
@@ -155,7 +146,7 @@ ServerConfig.RateLimit = {
 
 ## 🌍 Multi-Language
 
-`qb-report` has full **Turkish** and **English** support across all layers:
+`roninbase-report` has full **Turkish** and **English** support across all layers:
 
 ### In-game NUI
 Click the **🇬🇧 EN** / **🇹🇷 TR** button in the top-right corner of any panel. The language switches instantly and is remembered via `localStorage`.
@@ -187,7 +178,7 @@ ServerConfig.Locale = 'en'
 ## 📁 File Structure
 
 ```
-qb-report/
+roninbase-report/
 ├── fxmanifest.lua          # Resource manifest
 ├── config.lua              # Client-side config (locale, commands, categories)
 ├── server_config.lua       # Server-side config (webhook, cooldown, permissions)
@@ -215,6 +206,7 @@ qb-report/
 - **Rate limiting** blocks event flooding per player
 - **Input sanitization** strips control characters and enforces max lengths
 - **Permission checks** on every admin/superadmin event handler
+- **Double-spending protection** for report submissions
 
 ---
 
@@ -225,6 +217,9 @@ qb-report/
 - NUI language switcher button (🇬🇧 / 🇹🇷) with localStorage persistence
 - Locale files for both client/server Lua and NUI JSON
 - Category labels now sourced from locale files
+- **Real-time database persistence** (reports saved on creation)
+- **Active report validation** (prevents duplicate reports per player)
+- Improved admin history with advanced filtering and search
 
 ### v1.2.0
 - Added **Report History** panel for SuperAdmins
