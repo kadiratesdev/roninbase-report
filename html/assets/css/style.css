@@ -7,11 +7,11 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-    /* Palette */
-    --bg-overlay:     rgba(0,0,0,0.65);
-    --surface:        rgba(15, 17, 26, 0.92);
-    --surface-2:      rgba(25, 28, 42, 0.95);
-    --surface-3:      rgba(35, 39, 58, 0.9);
+    /* Palette — tüm renkler tam opak (FiveM CEF backdrop-filter desteklemez) */
+    --bg-overlay:     rgba(0,0,0,0.70);
+    --surface:        rgb(15, 17, 26);
+    --surface-2:      rgb(25, 28, 42);
+    --surface-3:      rgb(35, 39, 58);
     --border:         rgba(255,255,255,0.08);
     --border-hover:   rgba(255,255,255,0.15);
 
@@ -61,8 +61,6 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
     z-index: 1000;
     transition: opacity var(--duration) var(--ease);
 }
@@ -73,9 +71,7 @@ body {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    box-shadow: var(--shadow), 0 0 0 1px rgba(255,255,255,0.04) inset;
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    box-shadow: var(--shadow);
     display: flex;
     flex-direction: column;
     animation: modalIn 0.3s var(--ease);
@@ -788,7 +784,6 @@ body {
     min-width: 280px;
     max-width: 360px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-    backdrop-filter: blur(12px);
     animation: toastIn 0.3s var(--ease);
     pointer-events: auto;
 }
@@ -864,8 +859,6 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
     z-index: 9998;
     animation: fadeOverlay 0.2s var(--ease);
 }
@@ -882,8 +875,6 @@ body {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
     padding: 28px 32px;
     display: flex;
     flex-direction: column;
