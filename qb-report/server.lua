@@ -12,6 +12,41 @@
 
 local QBCore = exports['qb-core']:GetCoreObject()
 
+-- ── Otomatik tablo oluşturma ───────────────────────────────────────────────────
+-- oxmysql veya mysql-async fark etmeksizin çalışır.
+-- Rapor logları bellekte tutulur; bu tablo Discord'a gitmeyen
+-- kalıcı bir audit log olarak kullanılabilir (opsiyonel).
+CreateThread(function()
+    MySQL.Async.execute([[
+        CREATE TABLE IF NOT EXISTS `qb_reports` (
+            `id`             INT          NOT NULL AUTO_INCREMENT,
+            `category`       VARCHAR(64)  NOT NULL,
+            `category_label` VARCHAR(128) NOT NULL DEFAULT '',
+            `description`    TEXT         NOT NULL,
+            `reporter_id`    INT          NOT NULL,
+            `reporter_name`  VARCHAR(128) NOT NULL DEFAULT 'Unknown',
+            `target_id`      INT              NULL DEFAULT NULL,
+            `target_name`    VARCHAR(128)     NULL DEFAULT NULL,
+            `status`         ENUM('open','claimed','resolved') NOT NULL DEFAULT 'open',
+            `claimed_by`     VARCHAR(128)     NULL DEFAULT NULL,
+            `resolved_by`    VARCHAR(128)     NULL DEFAULT NULL,
+            `created_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            INDEX `idx_status`      (`status`),
+            INDEX `idx_reporter_id` (`reporter_id`),
+            INDEX `idx_created_at`  (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ]], {}, function(rowsChanged)
+        -- CREATE TABLE IF NOT EXISTS başarısız olursa rowsChanged nil gelir
+        if rowsChanged == false then
+            print('^1[qb-report] HATA: qb_reports tablosu oluşturulamadı! MySQL bağlantısını kontrol edin.^0')
+        else
+            print('^2[qb-report] qb_reports tablosu hazır.^0')
+        end
+    end)
+end)
+
 -- ── State ─────────────────────────────────────────────────────────────────────
 local Reports   = {}   -- { [id] = reportData }
 local ReportId  = 0
