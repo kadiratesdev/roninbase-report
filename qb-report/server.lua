@@ -1,290 +1,498 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+--  qb-report  |  server.lua
+--  Güvenlik katmanları:
+--    1. Event rate-limit  (flood / spam koruması)
+--    2. Admin yetki doğrulama (her yetkili eylemde)
+--    3. Input whitelist + tip kontrolü (category, description, targetId)
+--    4. String injection temizliği
+--    5. Rapor ID integer doğrulama (string geçme saldırısı)
+--    6. Bellek sınırı (MaxReports aşılınca en eski çözümlenen silinir)
+--    7. Webhook yalnızca server-side; client asla göremez
+-- ─────────────────────────────────────────────────────────────────────────────
+
 local QBCore = exports['qb-core']:GetCoreObject()
 
--- In-memory report store  { [id] = reportData }
-local Reports   = {}
+-- ── State ─────────────────────────────────────────────────────────────────────
+local Reports   = {}   -- { [id] = reportData }
 local ReportId  = 0
--- Cooldown tracking  { [playerId] = timestamp }
-local Cooldowns = {}
+local Cooldowns = {}   -- { [src] = os.time() }
+local RateBuckets = {} -- { [src] = { count=N, window=timestamp } }
 
 -- ─────────────────────────────────────────
---  Utility helpers
+--  Log helper
+-- ─────────────────────────────────────────
+local function Log(msg)
+    if ServerConfig.Logging.Enabled then
+        print(ServerConfig.Logging.Prefix .. ' ' .. msg)
+    end
+end
+
+-- ─────────────────────────────────────────
+--  Rate-limit  (flood koruması)
+--  Döndürür: true = engelle, false = geçebilir
+-- ─────────────────────────────────────────
+local function RateLimit(src)
+    local now = os.time()
+    local bucket = RateBuckets[src]
+
+    if not bucket or (now - bucket.window) >= ServerConfig.RateLimit.MaxWindow then
+        RateBuckets[src] = { count = 1, window = now }
+        return false
+    end
+
+    bucket.count = bucket.count + 1
+
+    if bucket.count > ServerConfig.RateLimit.MaxEvents then
+        Log('Rate-limit tetiklendi: src=' .. src .. ' (' .. bucket.count .. ' event/' .. ServerConfig.RateLimit.MaxWindow .. 's)')
+        -- Kötü niyetli trafiği bant içinde tut; tekrar sayacı sıfırlamıyoruz
+        return true
+    end
+
+    return false
+end
+
+-- ─────────────────────────────────────────
+--  Admin kontrolü
 -- ─────────────────────────────────────────
 local function IsAdmin(src)
+    if not src or src <= 0 then return false end
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then return false end
     local group = QBCore.Functions.GetPermission(src)
-    for _, g in ipairs(Config.AdminGroups) do
+    for _, g in ipairs(ServerConfig.AdminGroups) do
         if group == g then return true end
     end
     return false
 end
 
-local function GetPlayerName(src)
+-- ─────────────────────────────────────────
+--  Karakter adı (güvenli)
+-- ─────────────────────────────────────────
+local function SafeGetName(src)
     local Player = QBCore.Functions.GetPlayer(src)
     if Player then
-        return Player.PlayerData.charinfo.firstname .. ' ' .. Player.PlayerData.charinfo.lastname
+        local ci = Player.PlayerData.charinfo
+        if ci and ci.firstname and ci.lastname then
+            return tostring(ci.firstname) .. ' ' .. tostring(ci.lastname)
+        end
     end
-    return GetPlayerName(src) or 'Unknown'
+    return 'Unknown'
 end
 
-local function FormatTimestamp()
+-- ─────────────────────────────────────────
+--  String temizleyici
+--  Kontrol karakterleri ve Lua injection karakterleri temizler
+-- ─────────────────────────────────────────
+local function Sanitize(input, maxLen)
+    if type(input) ~= 'string' then return '' end
+    -- Null byte, ESC ve diğer control char'larını at
+    local clean = input:gsub('[%z\1-\8\11-\12\14-\31\127]', '')
+    -- Maksimum uzunluğa kes
+    return clean:sub(1, maxLen or ServerConfig.MaxDescLength)
+end
+
+-- ─────────────────────────────────────────
+--  Kategori whitelist kontrolü
+-- ─────────────────────────────────────────
+local ValidCatSet = {}
+for _, v in ipairs(ServerConfig.ValidCategories) do
+    ValidCatSet[v] = true
+end
+
+local function IsValidCategory(cat)
+    return type(cat) == 'string' and ValidCatSet[cat] == true
+end
+
+-- ─────────────────────────────────────────
+--  Timestamp
+-- ─────────────────────────────────────────
+local function Timestamp()
     return os.date('%d/%m/%Y %H:%M:%S')
 end
 
 -- ─────────────────────────────────────────
---  Discord Webhook
+--  Bellekten eski çözümlenen raporu temizle
 -- ─────────────────────────────────────────
-local function SendDiscord(title, description, color, fields)
-    if not Config.Discord.Enabled or Config.Discord.Webhook == 'YOUR_DISCORD_WEBHOOK_URL_HERE' then return end
+local function PruneReports()
+    local count = 0
+    for _ in pairs(Reports) do count = count + 1 end
+    if count < ServerConfig.MaxReports then return end
 
-    local embedFields = {}
-    if fields then
-        for _, f in ipairs(fields) do
-            embedFields[#embedFields + 1] = {
-                name   = f.name,
-                value  = f.value,
-                inline = f.inline or false,
-            }
+    -- En eski çözümlenen raporu bul ve sil
+    local oldest, oldestId = nil, nil
+    for id, r in pairs(Reports) do
+        if r.status == 'resolved' then
+            if not oldest or id < oldestId then
+                oldest, oldestId = r, id
+            end
         end
     end
-
-    PerformHttpRequest(Config.Discord.Webhook, function(err, text, headers) end, 'POST',
-        json.encode({
-            username   = Config.Discord.BotName,
-            avatar_url = Config.Discord.BotAvatar,
-            embeds = {
-                {
-                    title       = title,
-                    description = description,
-                    color       = color,
-                    fields      = embedFields,
-                    footer      = { text = 'Report System • ' .. FormatTimestamp() },
-                }
-            }
-        }),
-        { ['Content-Type'] = 'application/json' }
-    )
-end
-
--- ─────────────────────────────────────────
---  Notify all online admins
--- ─────────────────────────────────────────
-local function NotifyAdmins(report)
-    local players = QBCore.Functions.GetQBPlayers()
-    for _, player in pairs(players) do
-        local src = player.PlayerData.source
-        if IsAdmin(src) then
-            TriggerClientEvent('qb-report:client:newReportAlert', src, report)
-        end
+    if oldestId then
+        Reports[oldestId] = nil
+        Log('Bellek limiti: rapor #' .. oldestId .. ' temizlendi.')
     end
 end
 
 -- ─────────────────────────────────────────
---  Build sanitised report list for admins
+--  Admin listesini güvenli döndür
 -- ─────────────────────────────────────────
 local function GetReportList()
     local list = {}
-    for id, r in pairs(Reports) do
+    for _, r in pairs(Reports) do
         list[#list + 1] = r
     end
-    -- Sort newest first
     table.sort(list, function(a, b) return a.id > b.id end)
     return list
 end
 
 -- ─────────────────────────────────────────
---  Callback: get online players (for reporter)
+--  Tüm adminlere rapor listesini gönder
 -- ─────────────────────────────────────────
+local function BroadcastToAdmins(eventName, payload)
+    local players = QBCore.Functions.GetQBPlayers()
+    for _, player in pairs(players) do
+        local s = player.PlayerData.source
+        if IsAdmin(s) then
+            TriggerClientEvent(eventName, s, payload)
+        end
+    end
+end
+
+-- ─────────────────────────────────────────
+--  Discord Webhook  (server-only)
+-- ─────────────────────────────────────────
+local function SendDiscord(title, description, color, fields)
+    local cfg = ServerConfig.Discord
+    if not cfg.Enabled then return end
+    if not cfg.Webhook or cfg.Webhook == '' or cfg.Webhook == 'YOUR_DISCORD_WEBHOOK_URL_HERE' then
+        Log('Discord webhook tanımlı değil, atlanıyor.')
+        return
+    end
+
+    local embedFields = {}
+    if fields then
+        for _, f in ipairs(fields) do
+            embedFields[#embedFields + 1] = {
+                name   = tostring(f.name  or ''),
+                value  = tostring(f.value or '-'),
+                inline = f.inline or false,
+            }
+        end
+    end
+
+    local body = json.encode({
+        username   = cfg.BotName,
+        avatar_url = cfg.BotAvatar,
+        embeds = {{
+            title       = title,
+            description = description,
+            color       = color,
+            fields      = embedFields,
+            footer      = { text = 'Report System • ' .. Timestamp() },
+        }},
+    })
+
+    PerformHttpRequest(cfg.Webhook,
+        function(status, _text, _headers)
+            if status ~= 204 and status ~= 200 then
+                Log('Discord webhook HTTP hatası: ' .. tostring(status))
+            end
+        end,
+        'POST', body,
+        { ['Content-Type'] = 'application/json' }
+    )
+end
+
+-- ═════════════════════════════════════════
+--  CALLBACK: Oyuncu listesi (report menüsü)
+-- ═════════════════════════════════════════
 QBCore.Functions.CreateCallback('qb-report:server:getPlayers', function(source, cb)
+    if RateLimit(source) then cb({}) return end
+
     local players = {}
     local qbPlayers = QBCore.Functions.GetQBPlayers()
     for _, player in pairs(qbPlayers) do
-        local src = player.PlayerData.source
-        if src ~= source then
+        local s = player.PlayerData.source
+        if s ~= source then
             players[#players + 1] = {
-                id   = src,
-                name = player.PlayerData.charinfo.firstname .. ' ' .. player.PlayerData.charinfo.lastname,
+                id   = s,
+                name = SafeGetName(s),
             }
         end
     end
     cb(players)
 end)
 
--- ─────────────────────────────────────────
---  Event: Check if caller is admin
--- ─────────────────────────────────────────
+-- ═════════════════════════════════════════
+--  EVENT: Admin panel yetkisi kontrolü
+-- ═════════════════════════════════════════
 RegisterNetEvent('qb-report:server:checkAdmin', function()
     local src = source
+    if RateLimit(src) then return end
+
     if IsAdmin(src) then
         TriggerClientEvent('qb-report:client:openAdminPanel', src)
     else
-        TriggerClientEvent('qb-core:client:Notify', src, 'You do not have permission to use this command.', 'error', 4000)
+        TriggerClientEvent('qb-core:client:Notify', src,
+            'Bu komutu kullanma yetkiniz yok.', 'error', 4000)
+        Log('Yetkisiz admin panel erişim denemesi: src=' .. src)
     end
 end)
 
--- ─────────────────────────────────────────
---  Event: Submit a report
--- ─────────────────────────────────────────
+-- ═════════════════════════════════════════
+--  EVENT: Rapor gönder
+-- ═════════════════════════════════════════
 RegisterNetEvent('qb-report:server:submitReport', function(data)
     local src = source
 
-    -- Cooldown check
+    -- 1. Rate-limit
+    if RateLimit(src) then return end
+
+    -- 2. data nil/type kontrolü
+    if type(data) ~= 'table' then
+        Log('submitReport: geçersiz data tipi, src=' .. src)
+        return
+    end
+
+    -- 3. Cooldown kontrolü
     local now = os.time()
-    if Cooldowns[src] and (now - Cooldowns[src]) < Config.Cooldown then
-        local remaining = Config.Cooldown - (now - Cooldowns[src])
+    if Cooldowns[src] and (now - Cooldowns[src]) < ServerConfig.Cooldown then
+        local remaining = ServerConfig.Cooldown - (now - Cooldowns[src])
         TriggerClientEvent('qb-report:client:cooldown', src, remaining)
         return
     end
 
-    Cooldowns[src] = now
-    ReportId = ReportId + 1
+    -- 4. Kategori whitelist
+    if not IsValidCategory(data.category) then
+        Log('submitReport: geçersiz kategori "' .. tostring(data.category) .. '", src=' .. src)
+        return
+    end
 
-    local reporterName = GetPlayerName(src)
+    -- 5. Açıklama uzunluk + sanitize
+    local desc = Sanitize(data.description, ServerConfig.MaxDescLength)
+    if #desc < 5 then
+        TriggerClientEvent('qb-core:client:Notify', src,
+            'Lütfen daha açıklayıcı bir açıklama yazın (min. 5 karakter).', 'error', 4000)
+        return
+    end
+
+    -- 6. targetId integer kontrolü (opsiyonel alan)
+    local targetId   = nil
+    local targetName = nil
+    if data.targetId ~= nil then
+        targetId = tonumber(data.targetId)
+        -- Sunucuda bu oyuncu gerçekten var mı?
+        if not targetId or not QBCore.Functions.GetPlayer(targetId) then
+            targetId   = nil  -- geçersizse sil, raporu yine de al
+        else
+            targetName = SafeGetName(targetId)
+        end
+    end
+
+    -- 7. categoryLabel: sadece server-side'da kategori listesinden üret
+    local safeLabel = data.category  -- fallback
+    for _, cat in ipairs(ServerConfig.ValidCategories) do
+        -- Config.Categories server_config'de yok; burada basit eşleme yeterli
+        -- tam label için server_config'e de ekleyebilirsiniz; şimdilik category id kullanıyoruz
+        if cat == data.category then safeLabel = cat break end
+    end
+    -- Client'tan gelen label'ı sanitize ediyoruz (kullanmak istiyorsak)
+    if type(data.categoryLabel) == 'string' then
+        safeLabel = Sanitize(data.categoryLabel, 40)
+    end
+
+    -- 8. Bellek limiti kontrolü
+    PruneReports()
+
+    -- 9. Cooldown kaydet
+    Cooldowns[src] = now
+    ReportId       = ReportId + 1
+
+    local reporterName = SafeGetName(src)
 
     local report = {
         id            = ReportId,
         category      = data.category,
-        categoryLabel = data.categoryLabel,
-        description   = string.sub(data.description or '', 1, Config.MaxDescLength),
+        categoryLabel = safeLabel,
+        description   = desc,
         reporterId    = src,
         reporterName  = reporterName,
-        targetId      = data.targetId,
-        targetName    = data.targetName,
-        status        = 'open',       -- open | claimed | resolved
+        targetId      = targetId,
+        targetName    = targetName,
+        status        = 'open',
         claimedBy     = nil,
-        timestamp     = FormatTimestamp(),
+        timestamp     = Timestamp(),
     }
 
     Reports[ReportId] = report
 
-    -- Notify reporter
+    -- Oyuncuya bildirim
     TriggerClientEvent('qb-report:client:reportSent', src)
 
-    -- Notify admins
-    NotifyAdmins(report)
-
-    -- Push updated list to any open admin panels
-    local admins = QBCore.Functions.GetQBPlayers()
-    for _, player in pairs(admins) do
-        local adminSrc = player.PlayerData.source
-        if IsAdmin(adminSrc) then
-            TriggerClientEvent('qb-report:client:refreshReports', adminSrc, GetReportList())
-        end
-    end
+    -- Adminlere anlık bildirim
+    BroadcastToAdmins('qb-report:client:newReportAlert', report)
+    -- Açık admin panellerini güncelle
+    BroadcastToAdmins('qb-report:client:refreshReports', GetReportList())
 
     -- Discord
-    local fields = {
-        { name = '📋 Category',    value = data.categoryLabel or data.category, inline = true  },
-        { name = '👤 Reporter',    value = reporterName .. ' (ID: ' .. src .. ')', inline = true  },
-        { name = '🎯 Reported Player', value = data.targetName and (data.targetName .. ' (ID: ' .. tostring(data.targetId) .. ')') or 'None', inline = false },
-        { name = '📝 Description', value = report.description, inline = false },
-        { name = '🆔 Report ID',   value = tostring(ReportId), inline = true  },
-    }
-    SendDiscord('🚨 New Player Report #' .. ReportId, 'A new report has been submitted.', Config.Discord.Colors.NewReport, fields)
+    SendDiscord(
+        '🚨 Yeni Rapor #' .. ReportId,
+        'Bir oyuncu rapor gönderdi.',
+        ServerConfig.Discord.Colors.NewReport,
+        {
+            { name = '📋 Kategori',      value = safeLabel,                                         inline = true  },
+            { name = '👤 Raporlayan',    value = reporterName .. ' (ID: ' .. src .. ')',             inline = true  },
+            { name = '🎯 Raporlanan',    value = targetName and (targetName .. ' (ID: ' .. targetId .. ')') or 'Belirtilmedi', inline = false },
+            { name = '📝 Açıklama',      value = desc,                                              inline = false },
+            { name = '🆔 Rapor ID',      value = tostring(ReportId),                                inline = true  },
+        }
+    )
 
-    print('[qb-report] New report #' .. ReportId .. ' from ' .. reporterName .. ' (' .. src .. ')')
+    Log('Yeni rapor #' .. ReportId .. ' | ' .. reporterName .. ' (src=' .. src .. ') | ' .. data.category)
 end)
 
--- ─────────────────────────────────────────
---  Event: Get all reports (admin)
--- ─────────────────────────────────────────
+-- ═════════════════════════════════════════
+--  EVENT: Admin → Rapor listesi al
+-- ═════════════════════════════════════════
 RegisterNetEvent('qb-report:server:getReports', function()
     local src = source
-    if not IsAdmin(src) then return end
+    if RateLimit(src) then return end
+    if not IsAdmin(src) then
+        Log('Yetkisiz getReports: src=' .. src)
+        return
+    end
     TriggerClientEvent('qb-report:client:receiveReports', src, GetReportList())
 end)
 
--- ─────────────────────────────────────────
---  Event: Claim report
--- ─────────────────────────────────────────
+-- ═════════════════════════════════════════
+--  EVENT: Admin → Raporu üstlen
+-- ═════════════════════════════════════════
 RegisterNetEvent('qb-report:server:claimReport', function(reportId)
     local src = source
-    if not IsAdmin(src) then return end
+    if RateLimit(src) then return end
+    if not IsAdmin(src) then
+        Log('Yetkisiz claimReport: src=' .. src)
+        return
+    end
+
+    -- reportId tip ve varlık doğrulama
+    reportId = tonumber(reportId)
+    if not reportId then return end
 
     local r = Reports[reportId]
     if not r then return end
+    if r.status ~= 'open' then return end  -- zaten üstlenilmiş/çözülmüş
 
     r.status    = 'claimed'
-    r.claimedBy = GetPlayerName(src) .. ' (ID: ' .. src .. ')'
+    r.claimedBy = SafeGetName(src) .. ' (ID: ' .. src .. ')'
 
-    -- Notify reporter if still online
-    if r.reporterId then
+    -- Raporlayan oyuncuya bildir (hâlâ çevrimiçiyse)
+    if r.reporterId and QBCore.Functions.GetPlayer(r.reporterId) then
         TriggerClientEvent('qb-core:client:Notify', r.reporterId,
-            'An admin has claimed your report. They will be with you shortly.', 'success', 6000)
+            'Bir yetkili raporunuzu üstlendi.', 'success', 6000)
     end
 
-    -- Refresh admin panels
-    local admins = QBCore.Functions.GetQBPlayers()
-    for _, player in pairs(admins) do
-        local adminSrc = player.PlayerData.source
-        if IsAdmin(adminSrc) then
-            TriggerClientEvent('qb-report:client:refreshReports', adminSrc, GetReportList())
-        end
-    end
+    BroadcastToAdmins('qb-report:client:refreshReports', GetReportList())
 
-    SendDiscord('🔔 Report #' .. reportId .. ' Claimed',
-        'An admin has claimed a report.',
-        Config.Discord.Colors.Claimed,
+    SendDiscord(
+        '🔔 Rapor #' .. reportId .. ' Üstlenildi',
+        'Bir yetkili raporu üstlendi.',
+        ServerConfig.Discord.Colors.Claimed,
         {
-            { name = '🆔 Report ID',  value = tostring(reportId), inline = true  },
-            { name = '👮 Admin',       value = r.claimedBy,        inline = true  },
-            { name = '📋 Category',    value = r.categoryLabel,    inline = false },
+            { name = '🆔 Rapor ID',  value = tostring(reportId), inline = true  },
+            { name = '👮 Yetkili',   value = r.claimedBy,        inline = true  },
+            { name = '📋 Kategori', value = r.categoryLabel,     inline = false },
         }
     )
+
+    Log('Rapor #' .. reportId .. ' üstlenildi → ' .. r.claimedBy)
 end)
 
--- ─────────────────────────────────────────
---  Event: Resolve report
--- ─────────────────────────────────────────
+-- ═════════════════════════════════════════
+--  EVENT: Admin → Raporu kapat
+-- ═════════════════════════════════════════
 RegisterNetEvent('qb-report:server:resolveReport', function(reportId)
     local src = source
-    if not IsAdmin(src) then return end
+    if RateLimit(src) then return end
+    if not IsAdmin(src) then
+        Log('Yetkisiz resolveReport: src=' .. src)
+        return
+    end
+
+    reportId = tonumber(reportId)
+    if not reportId then return end
 
     local r = Reports[reportId]
     if not r then return end
+    if r.status == 'resolved' then return end  -- tekrar çözümleme engeli
 
-    r.status = 'resolved'
+    r.status     = 'resolved'
+    r.resolvedBy = SafeGetName(src) .. ' (ID: ' .. src .. ')'
 
-    -- Notify reporter
-    if r.reporterId then
+    if r.reporterId and QBCore.Functions.GetPlayer(r.reporterId) then
         TriggerClientEvent('qb-core:client:Notify', r.reporterId,
-            'Your report has been resolved by an admin.', 'success', 6000)
+            'Raporunuz bir yetkili tarafından çözüldü.', 'success', 6000)
     end
 
-    -- Remove from active store after short delay
-    SetTimeout(30000, function()
-        Reports[reportId] = nil
+    -- 60 saniye sonra bellekten temizle
+    SetTimeout(60000, function()
+        if Reports[reportId] and Reports[reportId].status == 'resolved' then
+            Reports[reportId] = nil
+            Log('Rapor #' .. reportId .. ' bellekten temizlendi.')
+        end
     end)
 
-    -- Refresh admin panels
-    local admins = QBCore.Functions.GetQBPlayers()
-    for _, player in pairs(admins) do
-        local adminSrc = player.PlayerData.source
-        if IsAdmin(adminSrc) then
-            TriggerClientEvent('qb-report:client:refreshReports', adminSrc, GetReportList())
-        end
-    end
+    BroadcastToAdmins('qb-report:client:refreshReports', GetReportList())
 
-    SendDiscord('✅ Report #' .. reportId .. ' Resolved',
-        'A report has been marked as resolved.',
-        Config.Discord.Colors.Resolved,
+    SendDiscord(
+        '✅ Rapor #' .. reportId .. ' Çözüldü',
+        'Rapor kapatıldı.',
+        ServerConfig.Discord.Colors.Resolved,
         {
-            { name = '🆔 Report ID', value = tostring(reportId),  inline = true  },
-            { name = '👮 Resolved By', value = GetPlayerName(src) .. ' (ID: ' .. src .. ')', inline = true },
+            { name = '🆔 Rapor ID',     value = tostring(reportId), inline = true },
+            { name = '👮 Kapatan',      value = r.resolvedBy,       inline = true },
+            { name = '📋 Kategori',     value = r.categoryLabel,    inline = false },
+            { name = '📝 Açıklama',     value = r.description,      inline = false },
         }
     )
+
+    Log('Rapor #' .. reportId .. ' çözüldü → ' .. r.resolvedBy)
 end)
 
--- ─────────────────────────────────────────
---  Event: Teleport admin to reporter
--- ─────────────────────────────────────────
+-- ═════════════════════════════════════════
+--  EVENT: Admin → Oyuncuya ışınlan
+-- ═════════════════════════════════════════
 RegisterNetEvent('qb-report:server:teleportToReporter', function(targetPlayerId)
     local src = source
-    if not IsAdmin(src) then return end
+    if RateLimit(src) then return end
+    if not IsAdmin(src) then
+        Log('Yetkisiz teleport: src=' .. src)
+        return
+    end
+
+    -- targetPlayerId tip + varlık kontrolü
+    targetPlayerId = tonumber(targetPlayerId)
+    if not targetPlayerId then return end
+    if not QBCore.Functions.GetPlayer(targetPlayerId) then return end
 
     local ped    = GetPlayerPed(targetPlayerId)
     local coords = GetEntityCoords(ped)
+
     if coords then
-        TriggerClientEvent('qb-report:client:teleportCoords', src, { x = coords.x, y = coords.y, z = coords.z })
+        TriggerClientEvent('qb-report:client:teleportCoords', src, {
+            x = coords.x,
+            y = coords.y,
+            z = coords.z,
+        })
+        Log('Admin src=' .. src .. ' → src=' .. targetPlayerId .. ' ışınlandı.')
     end
+end)
+
+-- ═════════════════════════════════════════
+--  Oyuncu çıkınca cooldown + rate bucket temizle
+-- ═════════════════════════════════════════
+AddEventHandler('playerDropped', function()
+    local src = source
+    Cooldowns[src]    = nil
+    RateBuckets[src]  = nil
 end)

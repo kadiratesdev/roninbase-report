@@ -3,19 +3,17 @@ game 'gta5'
 
 author 'YourServer'
 description 'QBCore Beautiful Report System with NUI'
-version '1.0.0'
+version '1.1.0'
 
-shared_scripts {
-    '@qb-core/shared/locale.lua',
-    'config.lua'
-}
-
+-- Sadece client tarafına gönderilir (kategori listesi, komut isimleri)
 client_scripts {
+    'config.lua',
     'client.lua'
 }
 
+-- server_config.lua yalnızca sunucu tarafında yüklenir → webhook asla client'a sızmaz
 server_scripts {
-    '@oxmysql/lib/MySQL.lua',
+    'server_config.lua',
     'server.lua'
 }
 

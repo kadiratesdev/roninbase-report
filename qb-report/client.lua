@@ -1,9 +1,29 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+--  qb-report  |  client.lua
+--  Performans notları:
+--    • ESC thread: NUI kapalıyken Citizen.Wait(500) → CPU'ya yük yok
+--    • NUI açıkken: Citizen.Wait(0) ile anlık ESC algılaması
+--    • NUI Callback'lerde tip + uzunluk kontrolü yapılır
+--    • Server'a asla ham/unsafe veri gönderilmez
+-- ─────────────────────────────────────────────────────────────────────────────
+
 local QBCore = exports['qb-core']:GetCoreObject()
-local isNUIOpen = false
-local isAdminPanelOpen = false
+
+local isNUIOpen       = false
+local isAdminOpen     = false
 
 -- ─────────────────────────────────────────
---  Helper: Build category list for NUI
+--  Yardımcı: NUI'yi kapat
+-- ─────────────────────────────────────────
+local function CloseNUI()
+    isNUIOpen     = false
+    isAdminOpen   = false
+    SetNuiFocus(false, false)
+    SendNUIMessage({ action = 'closeAll' })
+end
+
+-- ─────────────────────────────────────────
+--  Kategori listesi (config'den)
 -- ─────────────────────────────────────────
 local function GetCategories()
     local cats = {}
@@ -14,43 +34,37 @@ local function GetCategories()
 end
 
 -- ─────────────────────────────────────────
---  Open Report Menu
+--  Rapor menüsünü aç
 -- ─────────────────────────────────────────
 local function OpenReportMenu()
-    if isNUIOpen or isAdminPanelOpen then return end
-    isNUIOpen = true
+    if isNUIOpen or isAdminOpen then return end
 
-    -- Fetch online players for "report a player" feature
     QBCore.Functions.TriggerCallback('qb-report:server:getPlayers', function(players)
+        isNUIOpen = true
         SetNuiFocus(true, true)
         SendNUIMessage({
-            action = 'openReport',
+            action     = 'openReport',
             categories = GetCategories(),
-            players = players,
+            players    = players,
         })
     end)
 end
 
 -- ─────────────────────────────────────────
---  Open Admin Panel
+--  Admin paneli aç (server onayından sonra)
 -- ─────────────────────────────────────────
-local function OpenAdminPanel()
-    if isNUIOpen or isAdminPanelOpen then return end
-    isAdminPanelOpen = true
-
-    TriggerServerEvent('qb-report:server:getReports')
-end
-
-RegisterNetEvent('qb-report:client:receiveReports', function(reports)
+local function OpenAdminPanel(reports)
+    if isNUIOpen or isAdminOpen then return end
+    isAdminOpen = true
     SetNuiFocus(true, true)
     SendNUIMessage({
-        action = 'openAdmin',
+        action  = 'openAdmin',
         reports = reports,
     })
-end)
+end
 
 -- ─────────────────────────────────────────
---  Commands
+--  Komutlar
 -- ─────────────────────────────────────────
 RegisterCommand(Config.Command, function()
     OpenReportMenu()
@@ -60,117 +74,139 @@ RegisterCommand(Config.AdminCommand, function()
     TriggerServerEvent('qb-report:server:checkAdmin')
 end, false)
 
+-- ─────────────────────────────────────────
+--  Server → Client olayları
+-- ─────────────────────────────────────────
 RegisterNetEvent('qb-report:client:openAdminPanel', function()
-    OpenAdminPanel()
+    TriggerServerEvent('qb-report:server:getReports')
+end)
+
+RegisterNetEvent('qb-report:client:receiveReports', function(reports)
+    if type(reports) ~= 'table' then return end
+    OpenAdminPanel(reports)
+end)
+
+RegisterNetEvent('qb-report:client:reportSent', function()
+    CloseNUI()
+    QBCore.Functions.Notify(Config.Notifications.ReportSent, 'success', 5000)
+end)
+
+RegisterNetEvent('qb-report:client:cooldown', function(remaining)
+    remaining = tonumber(remaining) or 0
+    CloseNUI()
+    QBCore.Functions.Notify(
+        'Tekrar rapor göndermek için ' .. remaining .. ' saniye beklemeniz gerekiyor.',
+        'error', 4000
+    )
+end)
+
+RegisterNetEvent('qb-report:client:refreshReports', function(reports)
+    if type(reports) ~= 'table' then return end
+    -- Yalnızca admin paneli açıksa güncelle
+    if isAdminOpen then
+        SendNUIMessage({ action = 'updateReports', reports = reports })
+    end
+end)
+
+RegisterNetEvent('qb-report:client:newReportAlert', function(report)
+    if type(report) ~= 'table' then return end
+    SendNUIMessage({ action = 'newReportAlert', report = report })
+    QBCore.Functions.Notify(Config.Notifications.AdminNotify, 'primary', 5000)
+end)
+
+RegisterNetEvent('qb-report:client:teleportCoords', function(coords)
+    if type(coords) ~= 'table' then return end
+    local x = tonumber(coords.x)
+    local y = tonumber(coords.y)
+    local z = tonumber(coords.z)
+    if not x or not y or not z then return end
+    SetEntityCoords(PlayerPedId(), x, y, z, false, false, false, true)
 end)
 
 -- ─────────────────────────────────────────
---  NUI Callbacks
+--  NUI Callbacks  (input guard ile)
 -- ─────────────────────────────────────────
 
--- Close report menu
 RegisterNUICallback('closeReport', function(_, cb)
     isNUIOpen = false
     SetNuiFocus(false, false)
     cb('ok')
 end)
 
--- Close admin panel
 RegisterNUICallback('closeAdmin', function(_, cb)
-    isAdminPanelOpen = false
+    isAdminOpen = false
     SetNuiFocus(false, false)
     cb('ok')
 end)
 
--- Submit a report
 RegisterNUICallback('submitReport', function(data, cb)
+    if type(data) ~= 'table' then cb('err') return end
+
+    -- Tip kontrolü
+    local cat   = type(data.category) == 'string'     and data.category    or nil
+    local label = type(data.categoryLabel) == 'string' and data.categoryLabel or nil
+    local desc  = type(data.description) == 'string'  and data.description  or nil
+
+    if not cat or not desc or #desc < 5 then cb('err') return end
+
+    -- targetId: sayı ya da nil
+    local tid  = tonumber(data.targetId)
+    local tname = type(data.targetName) == 'string' and data.targetName or nil
+
     TriggerServerEvent('qb-report:server:submitReport', {
-        category   = data.category,
-        categoryLabel = data.categoryLabel,
-        description = data.description,
-        targetId   = data.targetId,    -- may be nil
-        targetName = data.targetName,  -- may be nil
+        category      = cat,
+        categoryLabel = label,
+        description   = desc:sub(1, 500),  -- client-side ön kesim
+        targetId      = tid,
+        targetName    = tname,
     })
+
     cb('ok')
 end)
 
--- Admin: claim report
 RegisterNUICallback('claimReport', function(data, cb)
-    TriggerServerEvent('qb-report:server:claimReport', data.reportId)
+    if type(data) ~= 'table' then cb('err') return end
+    local id = tonumber(data.reportId)
+    if not id then cb('err') return end
+    TriggerServerEvent('qb-report:server:claimReport', id)
     cb('ok')
 end)
 
--- Admin: resolve report
 RegisterNUICallback('resolveReport', function(data, cb)
-    TriggerServerEvent('qb-report:server:resolveReport', data.reportId)
+    if type(data) ~= 'table' then cb('err') return end
+    local id = tonumber(data.reportId)
+    if not id then cb('err') return end
+    TriggerServerEvent('qb-report:server:resolveReport', id)
     cb('ok')
 end)
 
--- Admin: teleport to reporter
 RegisterNUICallback('teleportToReporter', function(data, cb)
-    TriggerServerEvent('qb-report:server:teleportToReporter', data.playerId)
+    if type(data) ~= 'table' then cb('err') return end
+    local pid = tonumber(data.playerId)
+    if not pid then cb('err') return end
+    TriggerServerEvent('qb-report:server:teleportToReporter', pid)
     cb('ok')
 end)
 
--- Admin: refresh list
 RegisterNUICallback('refreshReports', function(_, cb)
     TriggerServerEvent('qb-report:server:getReports')
     cb('ok')
 end)
 
 -- ─────────────────────────────────────────
---  Server → Client events
--- ─────────────────────────────────────────
-
--- Report was submitted OK
-RegisterNetEvent('qb-report:client:reportSent', function()
-    isNUIOpen = false
-    SetNuiFocus(false, false)
-    SendNUIMessage({ action = 'closeAll' })
-    QBCore.Functions.Notify(Config.Notifications.ReportSent, 'success', 5000)
-end)
-
--- Still on cooldown
-RegisterNetEvent('qb-report:client:cooldown', function(remaining)
-    QBCore.Functions.Notify('You must wait ' .. remaining .. ' seconds before reporting again.', 'error', 4000)
-    isNUIOpen = false
-    SetNuiFocus(false, false)
-    SendNUIMessage({ action = 'closeAll' })
-end)
-
--- Admin: report list updated (push to open panel)
-RegisterNetEvent('qb-report:client:refreshReports', function(reports)
-    SendNUIMessage({
-        action = 'updateReports',
-        reports = reports,
-    })
-end)
-
--- Admin: notify new report arrived while panel is open
-RegisterNetEvent('qb-report:client:newReportAlert', function(report)
-    SendNUIMessage({
-        action  = 'newReportAlert',
-        report  = report,
-    })
-    QBCore.Functions.Notify(Config.Notifications.AdminNotify, 'primary', 5000)
-end)
-
--- Teleport coords received
-RegisterNetEvent('qb-report:client:teleportCoords', function(coords)
-    SetEntityCoords(PlayerPedId(), coords.x, coords.y, coords.z, false, false, false, true)
-end)
-
--- ─────────────────────────────────────────
---  ESC key to close NUI
+--  ESC Thread  (optimize edilmiş)
+--  NUI kapalıyken 500ms uyur → ~0% CPU kullanımı
+--  NUI açıkken  0ms   döner  → anlık ESC algılaması
 -- ─────────────────────────────────────────
 Citizen.CreateThread(function()
     while true do
-        Citizen.Wait(0)
-        if (isNUIOpen or isAdminPanelOpen) and IsControlJustReleased(0, 200) then
-            isNUIOpen = false
-            isAdminPanelOpen = false
-            SetNuiFocus(false, false)
-            SendNUIMessage({ action = 'closeAll' })
+        if isNUIOpen or isAdminOpen then
+            Citizen.Wait(0)
+            if IsControlJustReleased(0, 200) then  -- INPUT_FRONTEND_CANCEL (ESC)
+                CloseNUI()
+            end
+        else
+            Citizen.Wait(500)
         end
     end
 end)
