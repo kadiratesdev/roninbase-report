@@ -12,15 +12,22 @@ ServerConfig.MaxReports     = 200    -- Bellekte tutulacak maksimum rapor sayıs
 
 -- ── Admin Grupları (QBCore fallback) ─────────────────────────────────────────
 -- Öncelikli yöntem: server.cfg'de ACE permission tanımı
---   add_ace group.admin    rb-report.admin allow
---   add_ace group.mod      rb-report.admin allow
---   add_ace group.superadmin rb-report.admin allow
+--   add_ace group.admin       rb-report.admin      allow
+--   add_ace group.mod         rb-report.admin      allow
+--   add_ace group.superadmin  rb-report.admin      allow
+--   add_ace group.superadmin  rb-report.superadmin allow
 -- ACE izni yoksa aşağıdaki QBCore grupları fallback olarak kullanılır.
 ServerConfig.AdminGroups = {
     'admin',
     'superadmin',
     'mod',
     'moderator',
+}
+
+-- ── SuperAdmin Grupları ───────────────────────────────────────────────────────
+-- Geçmiş rapor geçmişine ve admin istatistiklerine yalnızca bu gruplar erişir.
+ServerConfig.SuperAdminGroups = {
+    'superadmin',
 }
 
 -- ── Rate-Limit (flood koruması) ───────────────────────────────────────────────

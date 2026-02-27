@@ -3,7 +3,7 @@ game 'gta5'
 
 author 'YourServer'
 description 'QBCore Beautiful Report System with NUI'
-version '1.1.0'
+version '1.2.0'
 
 -- Sadece client tarafına gönderilir (kategori listesi, komut isimleri)
 client_scripts {
