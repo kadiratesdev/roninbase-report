@@ -5,23 +5,22 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 Config = {}
 
--- Komutlar
+-- ── Dil ayarı ─────────────────────────────────────────────────────────────────
+-- 'tr' = Türkçe  |  'en' = English
+Config.Locale = 'tr'
+
+-- ── Komutlar ──────────────────────────────────────────────────────────────────
 Config.Command            = 'report'        -- Oyuncunun rapor menüsünü açma komutu
 Config.AdminCommand       = 'reports'       -- Admin paneli açma komutu
 Config.SuperAdminCommand  = 'reporthistory' -- Geçmiş + istatistik paneli (superadmin)
 
--- Rapor kategorileri (NUI'ye gönderilir)
+-- ── Rapor kategorileri (NUI'ye gönderilir) ────────────────────────────────────
+-- Etiketler locale dosyasından otomatik çekilir (locale sistemi yüklendikten sonra güncellenir)
 Config.Categories = {
-    { id = 'cheating',  label = 'Cheating / Hacking',      icon = '🎮', color = '#e74c3c' },
-    { id = 'rdm',       label = 'RDM (Random Deathmatch)',  icon = '🔫', color = '#e67e22' },
-    { id = 'vdm',       label = 'VDM (Vehicle Deathmatch)', icon = '🚗', color = '#f39c12' },
-    { id = 'toxicity',  label = 'Toxicity / Harassment',    icon = '💬', color = '#9b59b6' },
-    { id = 'bug',       label = 'Bug Report',               icon = '🐛', color = '#3498db' },
-    { id = 'other',     label = 'Other',                    icon = '📋', color = '#95a5a6' },
-}
-
--- Client bildirim metinleri
-Config.Notifications = {
-    ReportSent  = 'Raporunuz iletildi. Bir yetkili en kısa sürede inceleyecek.',
-    AdminNotify = 'Yeni bir oyuncu raporu alındı.',
+    { id = 'cheating',  icon = '🎮', color = '#e74c3c' },
+    { id = 'rdm',       icon = '🔫', color = '#e67e22' },
+    { id = 'vdm',       icon = '🚗', color = '#f39c12' },
+    { id = 'toxicity',  icon = '💬', color = '#9b59b6' },
+    { id = 'bug',       icon = '🐛', color = '#3498db' },
+    { id = 'other',     icon = '📋', color = '#95a5a6' },
 }
