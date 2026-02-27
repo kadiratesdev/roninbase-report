@@ -73,10 +73,12 @@ end
 --  NUI'yi kapat
 -- ─────────────────────────────────────────
 local function CloseNUI()
+    print('[DEBUG] CloseNUI() called - isNUIOpen: ' .. tostring(isNUIOpen) .. ', isAdminOpen: ' .. tostring(isAdminOpen) .. ', isHistoryOpen: ' .. tostring(isHistoryOpen))
     isNUIOpen     = false
     isAdminOpen   = false
     isHistoryOpen = false
     SetNuiFocus(false, false)
+    print('[DEBUG] SetNuiFocus(false, false) called in CloseNUI()')
     SendNUIMessage({ action = 'closeAll' })
 end
 
@@ -152,6 +154,7 @@ RegisterNetEvent('qb-report:client:openHistoryPanel', function()
 end)
 
 RegisterNetEvent('qb-report:client:reportSent', function()
+    print('[DEBUG] reportSent event received from server')
     CloseNUI()
     QBCore.Functions.Notify(T('report_sent'), 'success', 5000)
 end)
@@ -186,8 +189,10 @@ end)
 --  NUI Callbacks
 -- ─────────────────────────────────────────
 RegisterNUICallback('closeReport', function(_, cb)
+    print('[DEBUG] closeReport NUI callback triggered')
     isNUIOpen = false
     SetNuiFocus(false, false)
+    print('[DEBUG] SetNuiFocus(false, false) called in closeReport callback')
     cb('ok')
 end)
 
@@ -204,11 +209,13 @@ RegisterNUICallback('closeHistory', function(_, cb)
 end)
 
 RegisterNUICallback('submitReport', function(data, cb)
+    print('[DEBUG] submitReport NUI callback triggered')
     if type(data) ~= 'table' then cb('err') return end
     local cat   = type(data.category) == 'string'      and data.category      or nil
     local label = type(data.categoryLabel) == 'string'  and data.categoryLabel or nil
     local desc  = type(data.description) == 'string'   and data.description   or nil
     if not cat or not desc or #desc < 5 then cb('err') return end
+    print('[DEBUG] Sending submitReport to server')
     TriggerServerEvent('qb-report:server:submitReport', {
         category      = cat,
         categoryLabel = label,
@@ -216,6 +223,7 @@ RegisterNUICallback('submitReport', function(data, cb)
         targetId      = tonumber(data.targetId),
         targetName    = type(data.targetName) == 'string' and data.targetName or nil,
     })
+    print('[DEBUG] submitReport sent, returning cb(ok)')
     cb('ok')
 end)
 
@@ -258,6 +266,7 @@ RegisterNUICallback('fetchHistory', function(data, cb)
         page   = tonumber(data.page)   or 1,
         filter = tostring(data.filter  or 'all'),
         search = tostring(data.search  or ''),
+        status = tostring(data.status  or 'all'),
     })
 end)
 

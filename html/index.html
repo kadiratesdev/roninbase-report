@@ -153,6 +153,11 @@
                 <p data-i18n="no_reports">No reports found</p>
             </div>
         </div>
+        <div class="admin-pagination">
+            <button class="btn btn-sm btn-ghost" id="admin-prev"><i class="fas fa-chevron-left"></i></button>
+            <span class="page-info" id="admin-page-info">Page 1</span>
+            <button class="btn btn-sm btn-ghost" id="admin-next"><i class="fas fa-chevron-right"></i></button>
+        </div>
     </div>
 </div>
 
@@ -186,6 +191,12 @@
                     <i class="fas fa-search search-icon"></i>
                     <input type="text" id="history-search" data-i18n-placeholder="history_search_placeholder" placeholder="Search reporter, admin, description..." autocomplete="off" />
                 </div>
+                <select id="history-status-filter" class="history-select">
+                    <option value="all" data-i18n="filter_all">All Status</option>
+                    <option value="open" data-i18n="tab_open">Open</option>
+                    <option value="claimed" data-i18n="tab_claimed">Claimed</option>
+                    <option value="resolved" data-i18n="th_resolved">Resolved</option>
+                </select>
                 <select id="history-filter" class="history-select">
                     <option value="all" data-i18n="filter_all_categories">All Categories</option>
                     <option value="cheating" data-i18n="filter_cheating">Cheating</option>

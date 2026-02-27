@@ -82,9 +82,9 @@ const I18n = {
 ───────────────────────────────────────── */
 const State = {
     selectedCategory: null, selectedCategoryLabel: null, selectedPlayer: null,
-    allPlayers: [], allReports: [], activeFilter: 'all',
+    allPlayers: [], allReports: [], activeFilter: 'all', adminPage: 1, adminPageSize: 10,
     isLoading: false, pendingAction: null,
-    historyPage: 1, historyTotal: 0, historyFilter: 'all', historySearch: '', historyPageSize: 20,
+    historyPage: 1, historyTotal: 0, historyFilter: 'all', historySearch: '', historyStatus: 'all', historyPageSize: 20,
 };
 
 const $id = id => document.getElementById(id);
@@ -97,9 +97,11 @@ const reportOverlay = $id('report-overlay'), categoryGrid = $id('category-grid')
       adminOverlay = $id('admin-overlay'), reportListEl = $id('report-list'),
       emptyState = $id('empty-state'), statTotal = $id('stat-total'),
       statOpen = $id('stat-open'), statClaimed = $id('stat-claimed'),
+      adminPrev = $id('admin-prev'), adminNext = $id('admin-next'), adminPageInfo = $id('admin-page-info'),
       historyOverlay = $id('history-overlay'), historyList = $id('history-list'),
       historyEmpty = $id('history-empty'), historyPageInfo = $id('history-page-info'),
       historySearchEl = $id('history-search'), historyFilterEl = $id('history-filter'),
+      historyStatusFilterEl = $id('history-status-filter'),
       statsSummary = $id('stats-summary'), statsTbody = $id('stats-tbody'),
       toastContainer = $id('toast-container'), confirmOverlay = $id('confirm-overlay'),
       confirmMessage = $id('confirm-message'), confirmOkBtn = $id('confirm-ok'),
@@ -124,7 +126,7 @@ confirmOkBtn.addEventListener('click',()=>{ confirmOverlay.classList.add('hidden
 confirmCancelBtn.addEventListener('click',()=>{ confirmOverlay.classList.add('hidden'); State.pendingAction=null; });
 
 function nuiPost(action, data={}) {
-    const n=(typeof window.GetParentResourceName==='function')?window.GetParentResourceName():'qb-report';
+    const n=(typeof window.GetParentResourceName==='function')?window.GetParentResourceName():'roninbase-report';
     return fetch(`https://${n}/${action}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(()=>{});
 }
 
@@ -180,8 +182,18 @@ reportDesc.addEventListener('input',()=>{ const l=reportDesc.value.length; charC
 
 submitBtn.addEventListener('click',()=>{
     if(submitBtn.disabled||State.isLoading) return;
-    nuiPost('submitReport',{category:State.selectedCategory,categoryLabel:State.selectedCategoryLabel,description:reportDesc.value.trim(),targetId:State.selectedPlayer?State.selectedPlayer.id:null,targetName:State.selectedPlayer?State.selectedPlayer.name:null});
+    console.log('[DEBUG] Submit button clicked - sending report to server');
+    nuiPost('submitReport',{category:State.selectedCategory,categoryLabel:State.selectedCategoryLabel,description:reportDesc.value.trim(),targetId:State.selectedPlayer?State.selectedPlayer.id:null,targetName:State.selectedPlayer?State.selectedPlayer.name:null})
+    .then(response => {
+        console.log('[DEBUG] submitReport response received:', response);
+    })
+    .catch(err => {
+        console.error('[DEBUG] submitReport error:', err);
+    });
     reportOverlay.classList.add('hidden'); resetReportForm(); showToast(I18n.t('toast_report_submitted'),'success');
+    // DEBUG: Call closeReport to ensure NUI focus is released
+    console.log('[DEBUG] Calling closeReport after submit (immediate)');
+    nuiPost('closeReport');
 });
 
 $id('close-report').addEventListener('click',closeReportModal);
@@ -206,8 +218,11 @@ $id('refresh-reports').addEventListener('click',()=>{
 });
 
 document.querySelectorAll('.tab-btn').forEach(btn=>{
-    btn.addEventListener('click',()=>{ document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); State.activeFilter=btn.dataset.filter; renderReports(State.allReports); });
+    btn.addEventListener('click',()=>{ document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); State.activeFilter=btn.dataset.filter; State.adminPage=1; renderReports(State.allReports); });
 });
+
+if(adminPrev) adminPrev.addEventListener('click',()=>{if(State.adminPage<=1)return;State.adminPage--;renderReports(State.allReports);});
+if(adminNext) adminNext.addEventListener('click',()=>{const filtered=State.activeFilter==='all'?State.allReports:State.allReports.filter(r=>r.status===State.activeFilter);if(State.adminPage>=Math.ceil(filtered.length/State.adminPageSize))return;State.adminPage++;renderReports(State.allReports);});
 
 function renderReports(reports) {
     State.allReports=reports;
@@ -215,11 +230,21 @@ function renderReports(reports) {
     reports.forEach(r=>{ if(r.status==='open') open++; else if(r.status==='claimed') claimed++; });
     statTotal.textContent=reports.length; statOpen.textContent=open; statClaimed.textContent=claimed;
     const filtered=State.activeFilter==='all'?reports:reports.filter(r=>r.status===State.activeFilter);
+    
+    const totalPages = Math.max(1, Math.ceil(filtered.length / State.adminPageSize));
+    if (State.adminPage > totalPages) State.adminPage = totalPages;
+    if (adminPageInfo) adminPageInfo.textContent = I18n.t('page_info', {page: State.adminPage, total: totalPages, count: filtered.length});
+    if (adminPrev) adminPrev.disabled = State.adminPage <= 1;
+    if (adminNext) adminNext.disabled = State.adminPage >= totalPages;
+
+    const startIdx = (State.adminPage - 1) * State.adminPageSize;
+    const paginated = filtered.slice(startIdx, startIdx + State.adminPageSize);
+
     const em=new Map(); reportListEl.querySelectorAll('.report-card').forEach(c=>em.set(Number(c.dataset.id),c));
-    const ns=new Set(filtered.map(r=>r.id)); em.forEach((c,id)=>{if(!ns.has(id))c.remove();});
-    if(!filtered.length){emptyState.style.display='flex';return;} emptyState.style.display='none';
+    const ns=new Set(paginated.map(r=>r.id)); em.forEach((c,id)=>{if(!ns.has(id))c.remove();});
+    if(!paginated.length){emptyState.style.display='flex';} else {emptyState.style.display='none';}
     const f=document.createDocumentFragment(); let na=false;
-    filtered.forEach(r=>{
+    paginated.forEach(r=>{
         const ex=em.get(r.id);
         if(ex){const b=ex.querySelector('.report-status-badge');if(b&&b.dataset.status!==r.status)ex.replaceWith(buildReportCard(r));}
         else{f.appendChild(buildReportCard(r));na=true;}
@@ -230,8 +255,9 @@ function renderReports(reports) {
 function buildReportCard(r) {
     const sc={open:'badge-open',claimed:'badge-claimed'}[r.status]||'badge-open';
     const card=document.createElement('div'); card.className='report-card'; card.dataset.id=r.id;
+    let catTxt = I18n.t('cat_'+r.category); if (catTxt === 'cat_'+r.category) catTxt = r.categoryLabel||r.category;
     card.innerHTML=`
-        <div class="report-card-header"><span class="report-id">#${r.id}</span><span class="report-category-badge">${escapeHtml(r.categoryLabel||r.category)}</span><span class="report-status-badge ${sc}" data-status="${r.status}">${r.status.charAt(0).toUpperCase()+r.status.slice(1)}</span></div>
+        <div class="report-card-header"><span class="report-id">#${r.id}</span><span class="report-category-badge">${escapeHtml(catTxt)}</span><span class="report-status-badge ${sc}" data-status="${r.status}">${r.status.charAt(0).toUpperCase()+r.status.slice(1)}</span></div>
         <div class="report-card-body"><div class="report-meta"><span><i class="fas fa-user"></i> ${escapeHtml(r.reporterName)} (ID:${r.reporterId})</span>${r.targetName?`<span><i class="fas fa-crosshairs"></i> ${escapeHtml(r.targetName)}</span>`:''}<span><i class="fas fa-clock"></i> ${escapeHtml(r.timestamp)}</span>${r.claimedBy?`<span><i class="fas fa-shield-halved"></i> ${escapeHtml(r.claimedBy)}</span>`:''}</div><div class="report-description">${escapeHtml(r.description)}</div></div>
         <div class="report-card-actions">${r.status==='open'?`<button class="btn btn-sm btn-yellow claim-btn" data-id="${r.id}"><i class="fas fa-hand-paper"></i> ${escapeHtml(I18n.t('tab_claimed'))}</button>`:''}<button class="btn btn-sm btn-success resolve-btn" data-id="${r.id}"><i class="fas fa-check"></i> ${escapeHtml(I18n.t('th_resolved'))}</button><button class="btn btn-sm btn-outline teleport-btn" data-player="${r.reporterId}"><i class="fas fa-location-crosshairs"></i> Teleport</button>${r.targetId?`<button class="btn btn-sm btn-danger teleport-target-btn" data-player="${r.targetId}"><i class="fas fa-crosshairs"></i> Tp Reported</button>`:''}</div>`;
     const cb=card.querySelector('.claim-btn');
@@ -255,13 +281,22 @@ document.querySelectorAll('.history-tab').forEach(btn=>{
 });
 
 historySearchEl.addEventListener('input',debounce(()=>{State.historySearch=historySearchEl.value;State.historyPage=1;fetchHistory();},350));
+
+// Category filter
 historyFilterEl.addEventListener('change',()=>{State.historyFilter=historyFilterEl.value;State.historyPage=1;fetchHistory();});
+
+// Status filter - filter by ticket status (all, open, claimed, resolved)
+if (historyStatusFilterEl) {
+    historyStatusFilterEl.addEventListener('change',()=>{State.historyStatus=historyStatusFilterEl.value;State.historyPage=1;fetchHistory();});
+}
+
 $id('history-prev').addEventListener('click',()=>{if(State.historyPage<=1)return;State.historyPage--;fetchHistory();});
 $id('history-next').addEventListener('click',()=>{if(State.historyPage>=Math.ceil(State.historyTotal/State.historyPageSize))return;State.historyPage++;fetchHistory();});
 
 function fetchHistory(){
     setLoading(true);
-    nuiPost('fetchHistory',{page:State.historyPage,filter:State.historyFilter,search:State.historySearch}).finally(()=>setLoading(false));
+    // Include status filter in the request
+    nuiPost('fetchHistory',{page:State.historyPage,filter:State.historyFilter,search:State.historySearch,status:State.historyStatus||'all'}).finally(()=>setLoading(false));
 }
 
 function renderHistory(data, page) {
@@ -280,9 +315,53 @@ function renderHistory(data, page) {
 
 function buildHistoryCard(r) {
     const card=document.createElement('div'); card.className='history-card';
+    let catTxt = I18n.t('cat_'+r.category); if (catTxt === 'cat_'+r.category) catTxt = r.category_label||r.category;
+    
+    // Status badge styling
+    const statusClass = {open:'badge-open',claimed:'badge-claimed',resolved:'badge-resolved'}[r.status]||'badge-open';
+    const statusLabel = {open:I18n.t('tab_open')||'Open',claimed:I18n.t('tab_claimed')||'Claimed',resolved:I18n.t('th_resolved')||'Resolved'}[r.status]||r.status;
+    
     card.innerHTML=`
-        <div class="history-card-header"><span class="report-id">#${r.id}</span><span class="report-category-badge">${escapeHtml(r.category_label||r.category)}</span><span class="history-duration"><i class="fas fa-stopwatch"></i> ${fmtDuration(r.resolve_duration)}</span><span class="history-date"><i class="fas fa-calendar-check"></i> ${escapeHtml(r.resolved_at||'')}</span></div>
-        <div class="history-card-body"><div class="report-meta"><span><i class="fas fa-user"></i> ${escapeHtml(r.reporter_name)} (ID:${r.reporter_id})</span>${r.target_name?`<span><i class="fas fa-crosshairs"></i> ${escapeHtml(r.target_name)}</span>`:''}<span><i class="fas fa-shield-halved"></i> ${escapeHtml(r.resolved_by||'—')}</span></div><div class="report-description">${escapeHtml(r.description)}</div></div>`;
+        <div class="history-card-top">
+            <div class="history-card-badge-group">
+                <span class="report-id">#${r.id}</span>
+                <span class="report-category-badge">${escapeHtml(catTxt)}</span>
+                <span class="report-status-badge ${statusClass}">${escapeHtml(statusLabel)}</span>
+            </div>
+            <div class="history-card-time-group">
+                <span class="history-created"><i class="fas fa-plus-circle"></i> <span class="history-lbl">${escapeHtml(I18n.t('lbl_created'))}:</span> ${escapeHtml(r.created_at||'')}</span>
+                ${r.resolved_at ? `<span class="history-date"><i class="fas fa-calendar-alt"></i> <span class="history-lbl">${escapeHtml(I18n.t('lbl_resolved'))}:</span> ${escapeHtml(r.resolved_at)}</span>` : ''}
+                ${r.resolve_duration ? `<span class="history-duration"><i class="fas fa-stopwatch"></i> <span class="history-lbl">${escapeHtml(I18n.t('lbl_duration'))}:</span> ${fmtDuration(r.resolve_duration)}</span>` : ''}
+            </div>
+        </div>
+        <div class="history-card-main">
+            <div class="history-meta-grid">
+                <div class="meta-item">
+                    <span class="meta-label">${escapeHtml(I18n.t('lbl_reporter'))}</span>
+                    <span class="meta-value"><i class="fas fa-user"></i> ${escapeHtml(r.reporter_name)} <span class="meta-id">(ID: ${r.reporter_id})</span></span>
+                </div>
+                ${r.target_name ? `
+                <div class="meta-item">
+                    <span class="meta-label">${escapeHtml(I18n.t('lbl_reported_player'))}</span>
+                    <span class="meta-value target-value"><i class="fas fa-crosshairs"></i> ${escapeHtml(r.target_name)}</span>
+                </div>
+                ` : ''}
+                ${r.claimed_by ? `
+                <div class="meta-item">
+                    <span class="meta-label">${escapeHtml(I18n.t('lbl_claimed_by')||'Claimed By')}</span>
+                    <span class="meta-value admin-value"><i class="fas fa-hand-paper"></i> ${escapeHtml(r.claimed_by)}</span>
+                </div>
+                ` : ''}
+                <div class="meta-item">
+                    <span class="meta-label">${escapeHtml(I18n.t('lbl_resolved_by'))}</span>
+                    <span class="meta-value admin-value"><i class="fas fa-shield-halved"></i> ${escapeHtml(r.resolved_by||'—')}</span>
+                </div>
+            </div>
+            <div class="history-desc-box">
+                <span class="desc-label">${escapeHtml(I18n.t('lbl_description'))}</span>
+                <p class="report-description">${escapeHtml(r.description)}</p>
+            </div>
+        </div>`;
     return card;
 }
 
@@ -326,8 +405,9 @@ window.addEventListener('message',function(e){
             break;
         }
         case 'openHistory':
-            State.historyPage=1;State.historySearch='';State.historyFilter='all';
+            State.historyPage=1;State.historySearch='';State.historyFilter='all';State.historyStatus='all';
             historySearchEl.value='';historyFilterEl.value='all';
+            if(historyStatusFilterEl) historyStatusFilterEl.value='all';
             document.querySelectorAll('.history-tab').forEach(b=>b.classList.remove('active'));
             document.querySelector('.history-tab[data-tab="history"]').classList.add('active');
             $id('history-tab-content').classList.remove('hidden');

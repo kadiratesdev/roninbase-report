@@ -68,9 +68,20 @@
   "cat_toxicity": "Toksisite",
   "cat_bug": "Hata Bildirimi",
   "cat_other": "Diğer",
+  "filter_all": "Tümü",
 
   "player_not_found": "Oyuncu bulunamadı",
   "server_id": "Sunucu ID",
+
+  "lbl_created": "Açılış",
+  "lbl_resolved": "Çözülme",
+  "lbl_duration": "Süre",
+
+  "lbl_reporter": "Raporlayan",
+  "lbl_reported_player": "Raporlanan",
+  "lbl_claimed_by": "Üstlenen Yetkili",
+  "lbl_resolved_by": "Çözen Yetkili",
+  "lbl_description": "Açıklama",
 
   "lang_tr": "Türkçe",
   "lang_en": "İngilizce"

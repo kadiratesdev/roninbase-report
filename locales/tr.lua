@@ -6,7 +6,8 @@ return {
     report_sent         = 'Raporunuz iletildi. Bir yetkili en kısa sürede inceleyecek.',
     admin_notify        = 'Yeni bir oyuncu raporu alındı.',
     cooldown            = 'Tekrar rapor göndermek için {seconds} saniye beklemeniz gerekiyor.',
-    no_permission       = 'Bu komutu kullanma yetkiniz yok.',
+    no_permission    = 'Bu komutu kullanma yetkiniz yok.',
+    already_have_active_report = 'Zaten açık bir raporunuz bulunuyor, lütfen çözülmesini bekleyin.',
     desc_too_short      = 'Lütfen daha açıklayıcı bir açıklama yazın (min. 5 karakter).',
     report_claimed      = 'Bir yetkili raporunuzu üstlendi.',
     report_resolved     = 'Raporunuz bir yetkili tarafından çözüldü.',
@@ -26,6 +27,8 @@ return {
     discord_field_duration    = '⏱️ Süre',
     discord_field_not_specified = 'Belirtilmedi',
     discord_duration_fmt      = '{min} dk {sec} sn',
+    
+    filter_all      = 'Tümü',
 
     -- Kategori etiketleri
     cat_cheating   = 'Hile / Hack',

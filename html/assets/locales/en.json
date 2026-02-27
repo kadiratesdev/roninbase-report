@@ -72,6 +72,16 @@
   "player_not_found": "No players found",
   "server_id": "Server ID",
 
+  "lbl_created": "Opened",
+  "lbl_resolved": "Resolved",
+  "lbl_duration": "Duration",
+
+  "lbl_reporter": "Reporter",
+  "lbl_reported_player": "Reported Player",
+  "lbl_claimed_by": "Claimed By",
+  "lbl_resolved_by": "Resolved By",
+  "lbl_description": "Description",
+
   "lang_tr": "Turkish",
   "lang_en": "English"
 }

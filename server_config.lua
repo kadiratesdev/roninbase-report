@@ -26,12 +26,14 @@ ServerConfig.AdminGroups = {
     'superadmin',
     'mod',
     'moderator',
+    'rbase',
+    'god'
 }
 
 -- ── SuperAdmin Grupları ───────────────────────────────────────────────────────
 -- Geçmiş rapor geçmişine ve admin istatistiklerine yalnızca bu gruplar erişir.
 ServerConfig.SuperAdminGroups = {
-    'superadmin',
+    'rbase',
 }
 
 -- ── Rate-Limit (flood koruması) ───────────────────────────────────────────────
