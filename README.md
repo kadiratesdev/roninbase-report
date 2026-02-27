@@ -68,10 +68,10 @@ ensure roninbase-report
 Add these lines to your `server.cfg` for permission control:
 
 ```cfg
-add_ace group.admin       rb-report.admin      allow
-add_ace group.mod         rb-report.admin      allow
-add_ace group.superadmin  rb-report.admin      allow
-add_ace group.superadmin  rb-report.superadmin allow
+add_ace group.admin       roninbase-report.admin      allow
+add_ace group.mod         roninbase-report.admin      allow
+add_ace group.superadmin  roninbase-report.admin      allow
+add_ace group.superadmin  roninbase-report.superadmin allow
 ```
 
 > If ACE permissions are not set, the resource falls back to QBCore group checks defined in `server_config.lua`.

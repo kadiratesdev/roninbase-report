@@ -174,7 +174,7 @@ end
 -- ─────────────────────────────────────────
 local function IsAdmin(src)
     if not src or src <= 0 then return false end
-    if IsPlayerAceAllowed(tostring(src), 'rb-report.admin') then return true end
+    if IsPlayerAceAllowed(tostring(src), 'roninbase-report.admin') then return true end
     for _, g in ipairs(ServerConfig.AdminGroups) do
         if QBCore.Functions.HasPermission(src, g) then return true end
     end
@@ -186,7 +186,7 @@ end
 -- ─────────────────────────────────────────
 local function IsSuperAdmin(src)
     if not src or src <= 0 then return false end
-    if IsPlayerAceAllowed(tostring(src), 'rb-report.superadmin') then return true end
+    if IsPlayerAceAllowed(tostring(src), 'roninbase-report.superadmin') then return true end
     for _, g in ipairs(ServerConfig.SuperAdminGroups) do
         if QBCore.Functions.HasPermission(src, g) then return true end
     end
