@@ -18,7 +18,7 @@ local function LoadLocale(lang)
         return LoadResourceFile(GetCurrentResourceName(), 'locales/' .. lang .. '.lua')
     end)
     if ok and data then
-        local fn, err = load('return ' .. data)
+        local fn, err = load(data)
         if fn then
             return fn()
         else
