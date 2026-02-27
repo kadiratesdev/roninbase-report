@@ -1,240 +1,202 @@
--- Tech Development
--- Join our discord for support: https://discord.gg/2mXXhQy
--- Performance optimizations:
---   • SonoStaff sonucu cache'leniyor → her açılışta tek server round-trip
---   • Screenshot thread: gönderim yokken Wait(1000), gönderim varken Wait(0)
---   • LoadData tek callback içinde yapılıyor; SonoStaff cache kullanıyor
---   • postNUI inline edildi (gereksiz wrapper kaldırıldı)
+-- ─────────────────────────────────────────────────────────────────────────────
+--  qb-report  |  client.lua
+--  Performans notları:
+--    • ESC: Lua thread yok; JS keydown → nuiPost('escPressed') → CloseNUI()
+--    • NUI Callback'lerde tip + uzunluk kontrolü yapılır
+--    • Server'a asla ham/unsafe veri gönderilmez
+-- ─────────────────────────────────────────────────────────────────────────────
 
 local QBCore = exports['qb-core']:GetCoreObject()
-local PlayerData = {}
-local sendingImage = false
-local sendingImageReportId = 0
-local open = false
 
--- Cache: staff durumu bir kez sorulur, logout/login'de sıfırlanır
-local _staffCache = nil
+local isNUIOpen       = false
+local isAdminOpen     = false
 
-AddEventHandler('QBCore:Client:OnPlayerLoaded', function()
-    PlayerData = QBCore.Functions.GetPlayerData()
-    _staffCache = nil  -- yeni karakter yüklenince cache'i sıfırla
-end)
+-- ─────────────────────────────────────────
+--  Yardımcı: NUI'yi kapat
+-- ─────────────────────────────────────────
+local function CloseNUI()
+    isNUIOpen     = false
+    isAdminOpen   = false
+    SetNuiFocus(false, false)
+    SendNUIMessage({ action = 'closeAll' })
+end
 
-AddEventHandler('QBCore:Client:OnPlayerUnload', function()
-    _staffCache = nil
-end)
-
-RegisterNetEvent('ricky-report:open')
-AddEventHandler('ricky-report:open', function()
-    OpenReport()
-end)
-
-RegisterCommand(Config.CommandName, function(source, args, rawCommand)
-    OpenReport()
-end)
-
--- Asenkron callback + cache destekli staff kontrol
--- onResult(bool) şeklinde çağrılır
-local function GetStaffAsync(onResult)
-    if _staffCache ~= nil then
-        onResult(_staffCache)
-        return
+-- ─────────────────────────────────────────
+--  Kategori listesi (config'den)
+-- ─────────────────────────────────────────
+local function GetCategories()
+    local cats = {}
+    for _, v in ipairs(Config.Categories) do
+        cats[#cats + 1] = v
     end
-    QBCore.Functions.TriggerCallback('ricky-report:sonoStaff', function(staff)
-        _staffCache = staff
-        onResult(staff)
-    end)
+    return cats
 end
 
-LoadData = function()
-    -- Önce staff kontrolü, sonra tek seferde data al
-    GetStaffAsync(function(isStaff)
-        QBCore.Functions.TriggerCallback('ricky-report:getData', function(data)
+-- ─────────────────────────────────────────
+--  Rapor menüsünü aç
+-- ─────────────────────────────────────────
+local function OpenReportMenu()
+    if isNUIOpen or isAdminOpen then return end
 
-            SendNUIMessage({
-                type = "SET_LOCALES",
-                locales = Config.Locales
-            })
-
-            SendNUIMessage({
-                type = "SET_STAFF",
-                staff = isStaff
-            })
-
-            SendNUIMessage({
-                type = 'LOAD_STAFF_LIST',
-                staffList = data.staffList
-            })
-
-            if not isStaff then
-                SendNUIMessage({
-                    type = 'LOAD_PLAYER_REPORT',
-                    reportPlayer = data.reportPlayer
-                })
-            else
-                SendNUIMessage({
-                    type = 'SET_INFO_STAFF',
-                    identifier = PlayerData.identifier,
-                    name = GetPlayerName(PlayerId()),
-                })
-
-                SendNUIMessage({
-                    type = 'LOAD_CLAIMED_REPORT',
-                    claimedReport = data.reportClaimed
-                })
-
-                SendNUIMessage({
-                    type = 'LOAD_ALL_REPORT',
-                    allReport = data.allReport
-                })
-            end
-        end)
-    end)
-end
-
-OpenReport = function()
-    if open then return end  -- çift açılmayı engelle
-
-    GetStaffAsync(function(isStaff)
-        SendNUIMessage({
-            type = "SET_DEFAULT_SCHERMATA",
-            schermata = isStaff and 'all_report' or 1
-        })
-        LoadData()
+    QBCore.Functions.TriggerCallback('qb-report:server:getPlayers', function(players)
+        isNUIOpen = true
         SetNuiFocus(true, true)
-        SendNUIMessage({ type = 'OPEN' })
-        open = true
+        SendNUIMessage({
+            action     = 'openReport',
+            categories = GetCategories(),
+            players    = players,
+        })
     end)
 end
 
-RegisterNetEvent('ricky-report:openReportUser')
-AddEventHandler('ricky-report:openReportUser', function(idReport)
+-- ─────────────────────────────────────────
+--  Admin paneli aç (server onayından sonra)
+-- ─────────────────────────────────────────
+local function OpenAdminPanel(reports)
+    if isNUIOpen or isAdminOpen then return end
+    isAdminOpen = true
     SetNuiFocus(true, true)
     SendNUIMessage({
-        type = 'OPEN_REPORT_USER',
-        idReport = idReport
+        action  = 'openAdmin',
+        reports = reports,
     })
+end
+
+-- ─────────────────────────────────────────
+--  Komutlar
+-- ─────────────────────────────────────────
+RegisterCommand(Config.Command, function()
+    OpenReportMenu()
+end, false)
+
+RegisterCommand(Config.AdminCommand, function()
+    TriggerServerEvent('qb-report:server:checkAdmin')
+end, false)
+
+-- ─────────────────────────────────────────
+--  Server → Client olayları
+-- ─────────────────────────────────────────
+RegisterNetEvent('qb-report:client:openAdminPanel', function()
+    TriggerServerEvent('qb-report:server:getReports')
 end)
 
-RegisterNetEvent('ricky-report:openReportStaff')
-AddEventHandler('ricky-report:openReportStaff', function(idReport)
-    SetNuiFocus(true, true)
-    SendNUIMessage({
-        type = 'OPEN_REPORT_STAFF',
-        idReport = idReport
-    })
+RegisterNetEvent('qb-report:client:receiveReports', function(reports)
+    if type(reports) ~= 'table' then return end
+    OpenAdminPanel(reports)
 end)
 
-RegisterNUICallback('sendImage', function(data, cb)
+RegisterNetEvent('qb-report:client:reportSent', function()
+    CloseNUI()
+    QBCore.Functions.Notify(Config.Notifications.ReportSent, 'success', 5000)
+end)
+
+RegisterNetEvent('qb-report:client:cooldown', function(remaining)
+    remaining = tonumber(remaining) or 0
+    CloseNUI()
+    QBCore.Functions.Notify(
+        'Tekrar rapor göndermek için ' .. remaining .. ' saniye beklemeniz gerekiyor.',
+        'error', 4000
+    )
+end)
+
+RegisterNetEvent('qb-report:client:refreshReports', function(reports)
+    if type(reports) ~= 'table' then return end
+    -- Yalnızca admin paneli açıksa güncelle
+    if isAdminOpen then
+        SendNUIMessage({ action = 'updateReports', reports = reports })
+    end
+end)
+
+RegisterNetEvent('qb-report:client:newReportAlert', function(report)
+    if type(report) ~= 'table' then return end
+    SendNUIMessage({ action = 'newReportAlert', report = report })
+    QBCore.Functions.Notify(Config.Notifications.AdminNotify, 'primary', 5000)
+end)
+
+RegisterNetEvent('qb-report:client:teleportCoords', function(coords)
+    if type(coords) ~= 'table' then return end
+    local x = tonumber(coords.x)
+    local y = tonumber(coords.y)
+    local z = tonumber(coords.z)
+    if not x or not y or not z then return end
+    SetEntityCoords(PlayerPedId(), x, y, z, false, false, false, true)
+end)
+
+-- ─────────────────────────────────────────
+--  NUI Callbacks  (input guard ile)
+-- ─────────────────────────────────────────
+
+RegisterNUICallback('closeReport', function(_, cb)
+    isNUIOpen = false
     SetNuiFocus(false, false)
-    sendingImage = true
-    sendingImageReportId = data.reportId
     cb('ok')
 end)
 
-RegisterNUICallback('createReport', function(data, cb)
-    local title = tostring(data.title or ''):sub(1, 100)
-    local rtype = tonumber(data.type)
-    if not rtype then cb('err') return end
-    TriggerServerEvent('ricky-report:createReport', title, rtype)
-    cb('ok')
-end)
-
-RegisterNUICallback('action', function(data, cb)
-    local action = tostring(data.action or '')
-    local reportId = tonumber(data.reportId)
-    if not reportId then cb('err') return end
-    TriggerServerEvent('ricky-report:action', action, reportId)
-    cb('ok')
-end)
-
-RegisterNUICallback('sendMessage', function(data, cb)
-    local content = tostring(data.content or ''):sub(1, 500)
-    if #content < 1 then cb('err') return end
-    TriggerServerEvent('ricky-report:sendMessage', {
-        content  = content,
-        sender   = data.sender,
-        type     = data.type,
-        reportId = tonumber(data.reportId)
-    })
-    cb('ok')
-end)
-
-RegisterNUICallback('close', function(data, cb)
+RegisterNUICallback('closeAdmin', function(_, cb)
+    isAdminOpen = false
     SetNuiFocus(false, false)
-    open = false
+    cb('ok')
+end)
+
+RegisterNUICallback('submitReport', function(data, cb)
+    if type(data) ~= 'table' then cb('err') return end
+
+    -- Tip kontrolü
+    local cat   = type(data.category) == 'string'     and data.category    or nil
+    local label = type(data.categoryLabel) == 'string' and data.categoryLabel or nil
+    local desc  = type(data.description) == 'string'  and data.description  or nil
+
+    if not cat or not desc or #desc < 5 then cb('err') return end
+
+    -- targetId: sayı ya da nil
+    local tid  = tonumber(data.targetId)
+    local tname = type(data.targetName) == 'string' and data.targetName or nil
+
+    TriggerServerEvent('qb-report:server:submitReport', {
+        category      = cat,
+        categoryLabel = label,
+        description   = desc:sub(1, 500),  -- client-side ön kesim
+        targetId      = tid,
+        targetName    = tname,
+    })
+
     cb('ok')
 end)
 
 RegisterNUICallback('claimReport', function(data, cb)
-    local reportId = tonumber(data.reportId)
-    if not reportId then cb('err') return end
-    TriggerServerEvent('ricky-report:claimReport', reportId)
+    if type(data) ~= 'table' then cb('err') return end
+    local id = tonumber(data.reportId)
+    if not id then cb('err') return end
+    TriggerServerEvent('qb-report:server:claimReport', id)
     cb('ok')
 end)
 
-RegisterNetEvent('ricky-report:updateReport')
-AddEventHandler('ricky-report:updateReport', function()
-    if open then
-        LoadData()
-    end
+RegisterNUICallback('resolveReport', function(data, cb)
+    if type(data) ~= 'table' then cb('err') return end
+    local id = tonumber(data.reportId)
+    if not id then cb('err') return end
+    TriggerServerEvent('qb-report:server:resolveReport', id)
+    cb('ok')
 end)
 
-RegisterNetEvent('ricky-report:scrollMessage')
-AddEventHandler('ricky-report:scrollMessage', function(reportId)
-    SendNUIMessage({
-        type = "SCROLL_MESSAGE",
-        reportId = reportId
-    })
+RegisterNUICallback('teleportToReporter', function(data, cb)
+    if type(data) ~= 'table' then cb('err') return end
+    local pid = tonumber(data.playerId)
+    if not pid then cb('err') return end
+    TriggerServerEvent('qb-report:server:teleportToReporter', pid)
+    cb('ok')
 end)
 
--- ─── Screenshot Thread ────────────────────────────────────────
--- sendingImage yokken 1000ms uyur → neredeyse sıfır CPU kullanımı
--- sendingImage varken 0ms → anlık E tuşu algılaması
-Citizen.CreateThread(function()
-    while true do
-        if sendingImage then
-            Citizen.Wait(0)
-            if IsControlJustPressed(0, 38) then  -- E tuşu
-                -- Webhook server-side'dan alınır, client'a doğrudan geçirilmez
-                -- screenshot-basic doğrudan upload URL'e istek atar
-                QBCore.Functions.TriggerCallback('ricky-report:getScreenshotUrl', function(uploadUrl)
-                    if not uploadUrl or uploadUrl == '' then
-                        TriggerEvent('ricky-report:notification', 'Görüntü servisi bulunamadı.', 'error')
-                        return
-                    end
-                    exports['screenshot-basic']:requestScreenshotUpload(uploadUrl, 'files[]', function(resp)
-                        if resp == nil then
-                            TriggerEvent('ricky-report:notification', 'Error, try again', 'error')
-                            return
-                        end
-                        local ok, decoded = pcall(json.decode, resp)
-                        if not ok or not decoded or not decoded.attachments or not decoded.attachments[1] then
-                            TriggerEvent('ricky-report:notification', 'Görüntü parse hatası.', 'error')
-                            return
-                        end
-                        local url = decoded.attachments[1].url
-                        TriggerServerEvent('ricky-report:sendImage', sendingImageReportId, url)
-                        sendingImage = false
-                    end)
-                end)
-            end
-        else
-            Citizen.Wait(1000)
-        end
-    end
+RegisterNUICallback('refreshReports', function(_, cb)
+    TriggerServerEvent('qb-report:server:getReports')
+    cb('ok')
 end)
 
-RegisterNetEvent('ricky-report:notification')
-AddEventHandler('ricky-report:notification', function(msg, type)
-    exports["urp-notify"]:Alert("REPORT", msg, 5000, type)
-end)
-
-RegisterNUICallback('brutalAction', function(data, cb)
-    local action   = tostring(data.action or '')
-    local reportId = tonumber(data.reportId)
-    local reason   = tostring(data.reason or ''):sub(1, 200)
-    if not reportId or action == '' then cb('err') return end
-    TriggerServerEvent('ricky-report:brutalAction', action, reportId, reason)
+-- ─────────────────────────────────────────
+--  ESC → JS tarafında yakalanıp buraya callback gelir
+--  Thread yok → sıfır CPU kullanımı
+-- ─────────────────────────────────────────
+RegisterNUICallback('escPressed', function(_, cb)
+    CloseNUI()
     cb('ok')
 end)

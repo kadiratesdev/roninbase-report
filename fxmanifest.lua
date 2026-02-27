@@ -1,34 +1,28 @@
--- Tech Development
--- Join our discord for support: https://discord.gg/2mXXhQy
+fx_version 'cerulean'
+game 'gta5'
 
-fx_version 'bodacious'
-lua54 'yes' 
-game 'gta5' 
+author 'YourServer'
+description 'QBCore Beautiful Report System with NUI'
+version '1.1.0'
 
-author 'R1CKY®#2220'
-description 'Report System - Tech Development'
-version '1.0'
-
-
+-- Sadece client tarafına gönderilir (kategori listesi, komut isimleri)
 client_scripts {
+    'config.lua',
     'client.lua'
 }
 
-shared_scripts {
-    'config.lua',
-}
+-- server_config.lua yalnızca sunucu tarafında yüklenir → webhook asla client'a sızmaz
 server_scripts {
-   '@oxmysql/lib/MySQL.lua',
-   'server_config.lua',
+    'server_config.lua',
     'server.lua'
 }
 
-ui_page 'web/index.html'
+ui_page 'html/index.html'
 
 files {
-    'web/*.html',
-    'web/css/*.css',
-    'web/js/*.js',
-    'web/fonts/*.otf',
-    'web/img/*.png',
+    'html/index.html',
+    'html/assets/css/style.css',
+    'html/assets/js/app.js'
 }
+
+lua54 'yes'

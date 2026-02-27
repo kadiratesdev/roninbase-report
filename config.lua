@@ -1,56 +1,26 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+--  qb-report  |  Client-side Config
+--  NOT: Discord webhook ve sunucu ayarları server_config.lua dosyasındadır.
+--       Bu dosya yalnızca client script tarafından yüklenir.
+-- ─────────────────────────────────────────────────────────────────────────────
 Config = {}
 
-Config.CommandName = 'report'
+-- Komutlar
+Config.Command      = 'report'   -- Oyuncunun rapor menüsünü açma komutu
+Config.AdminCommand = 'reports'  -- Admin paneli açma komutu
 
-Config.AdminGroups = {
-    "god",
-    'admin',
-    "mod"
+-- Rapor kategorileri (NUI'ye gönderilir)
+Config.Categories = {
+    { id = 'cheating',  label = 'Cheating / Hacking',      icon = '🎮', color = '#e74c3c' },
+    { id = 'rdm',       label = 'RDM (Random Deathmatch)',  icon = '🔫', color = '#e67e22' },
+    { id = 'vdm',       label = 'VDM (Vehicle Deathmatch)', icon = '🚗', color = '#f39c12' },
+    { id = 'toxicity',  label = 'Toxicity / Harassment',    icon = '💬', color = '#9b59b6' },
+    { id = 'bug',       label = 'Bug Report',               icon = '🐛', color = '#3498db' },
+    { id = 'other',     label = 'Other',                    icon = '📋', color = '#95a5a6' },
 }
 
-Config.Locales = {
-    ["create_new_report"] = "Yeni Rapor Oluştur",
-    ['my_report'] = "Raporlarım",
-    ['my_report_sub'] = "Oluşturduğunuz tüm raporları görüntüleyin",
-    ['staff_list'] = "Aktif Yetkililer",
-    ['fill_all'] = "Lütfen tüm gerekli alanları doldurun",
-    ["player"] = "Oyuncu",
-    ['bug'] = "Hata",
-    ["other"] = "Diğer",
-    ['type_title'] = "Başlık Türü",
-    ['create'] = "Oluştur",
-    ['no_closedate'] = "Hiçbiri",
-    ['pending'] = "Beklemede",
-    ['open'] = "Açık",
-    ['closed'] = "Kapalı",
-    ['view_image'] = "Resmi Görüntüle",
-    ['title'] = "Başlık",
-    ['status'] = "Durum",
-    ['open_date'] = "Açılış Tarihi",
-    ['close_date'] = "Kapanış Tarihi",
-    ['type_message'] = "Bir mesaj yazın",
-    ['admin_in_report'] = "İlgilenen Yetkili Sayısı",
-    ['all_report'] = "Tüm Raporlar",
-    ['report_claimed'] = "Üzerine Aldıkların",
-    ['ban'] = "Banla",
-    ['kick'] = "Oyundan At",
-    ['close_report'] = "Raporu Kapat",
-    ['claim_report'] = "Raporu Üzerine Al",
-    ['player_name'] = "Oyuncu Adı",
-    ['copied'] = "Kopyalandı!",
-    ['message_error'] = "Mesaj hata...",
-    ['type'] = "Tür",
-    ['send_image'] = "[E] Resim Gönder",
-    ['new_message'] = "Raporunuzda yeni bir mesajınız var",
-    ['your_report_claimed'] = "Raporunuz talep edildi",
-    ['confirm'] = "Onayla",
-    ['type_reason'] = "Bir neden yazın",
-    ['player_off'] = "Oyuncu çevrimdışı",
-    ['new_report'] = "Yeni Rapor!",
-    ['reason_error'] = "Geçersiz neden!"
+-- Client bildirim metinleri
+Config.Notifications = {
+    ReportSent  = 'Raporunuz iletildi. Bir yetkili en kısa sürede inceleyecek.',
+    AdminNotify = 'Yeni bir oyuncu raporu alındı.',
 }
-
-Ban = function(identifier, reason)
-    print("Banned "..identifier.." for "..reason)
-    -- Inserire il trigger
-end
