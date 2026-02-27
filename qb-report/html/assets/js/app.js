@@ -154,37 +154,42 @@ function GetParentResourceName() {
 }
 
 // ─────────────────────────────────────────
-//  Validate: enable/disable submit btn
+//  Klavye kısayolları
+//  ESC → önce confirm dialog, sonra modal,
+//        sonra Lua'ya 'escPressed' bildir
+//  Ctrl+R → admin panelinde yenile
 // ─────────────────────────────────────────
-function validateForm() {
-    const hasCategory = !!State.selectedCategory;
-    const hasDesc     = reportDesc.value.trim().length >= 5;
-    submitBtn.disabled = !(hasCategory && hasDesc);
-}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        // 1. Önce confirm dialog'u kapat (Lua'ya bildirme)
+        if (confirmOverlay && !confirmOverlay.classList.contains('hidden')) {
+            confirmOverlay.classList.add('hidden');
+            State.pendingAction = null;
+            return;
+        }
 
-// ─────────────────────────────────────────
-//  Build Category Grid
-// ─────────────────────────────────────────
-function buildCategories(categories) {
-    // DocumentFragment: tek seferde DOM'a ekle
-    const fragment = document.createDocumentFragment();
+        // 2. Report modal açıksa kapat + Lua'ya bildir
+        if (!reportOverlay.classList.contains('hidden')) {
+            closeReportModal();
+            nuiPost('escPressed');
+            return;
+        }
 
-    categories.forEach(cat => {
-        const card = document.createElement('div');
-        card.className = 'cat-card';
-        card.dataset.id    = cat.id;
-        card.dataset.label = cat.label;
-        if (cat.color) card.style.setProperty('--cat-color', cat.color);
+        // 3. Admin panel açıksa kapat + Lua'ya bildir
+        if (!adminOverlay.classList.contains('hidden')) {
+            closeAdminPanel();
+            nuiPost('escPressed');
+            return;
+        }
+    }
 
-        card.innerHTML = `
-            <div class="cat-check"><i class="fas fa-check"></i></div>
-            <span class="cat-icon">${escapeHtml(cat.icon || '📋')}</span>
-            <span class="cat-label">${escapeHtml(cat.label)}</span>
-        `;
-
-        card.addEventListener('click', () => selectCategory(cat.id, cat.label, card));
-        fragment.appendChild(card);
-    });
+    // Ctrl+R ile admin panelinde yenile
+    if (e.key === 'r' && (e.ctrlKey || e.metaKey) && !adminOverlay.classList.contains('hidden')) {
+        e.preventDefault();
+        nuiPost('refreshReports');
+        showToast('Refreshing...', 'info', 1500);
+    }
+});
 
     categoryGrid.innerHTML = '';
     categoryGrid.appendChild(fragment);
@@ -575,26 +580,4 @@ window.addEventListener('message', function(event) {
     }
 });
 
-// ─────────────────────────────────────────
-//  Klavye kısayolları
-//  ESC: modal kapat
-//  R: admin paneli açıkken yenile
-// ─────────────────────────────────────────
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-        if (confirmOverlay && !confirmOverlay.classList.contains('hidden')) {
-            confirmOverlay.classList.add('hidden');
-            State.pendingAction = null;
-            return;
-        }
-        if (!reportOverlay.classList.contains('hidden')) { closeReportModal(); return; }
-        if (!adminOverlay.classList.contains('hidden'))  { closeAdminPanel();  return; }
-    }
 
-    // Ctrl+R ile admin panelinde yenile
-    if (e.key === 'r' && (e.ctrlKey || e.metaKey) && !adminOverlay.classList.contains('hidden')) {
-        e.preventDefault();
-        nuiPost('refreshReports');
-        showToast('Refreshing...', 'info', 1500);
-    }
-});
