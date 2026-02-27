@@ -13,11 +13,10 @@
 local QBCore = exports['qb-core']:GetCoreObject()
 
 -- ── Otomatik tablo oluşturma ───────────────────────────────────────────────────
--- oxmysql veya mysql-async fark etmeksizin çalışır.
--- Rapor logları bellekte tutulur; bu tablo Discord'a gitmeyen
--- kalıcı bir audit log olarak kullanılabilir (opsiyonel).
-CreateThread(function()
-    MySQL.Async.execute([[
+-- MySQL.ready → oxmysql bağlantısı kurulduğunda tetiklenir,
+-- CREATE TABLE hiçbir zaman "MySQL is nil" hatası vermez.
+MySQL.ready(function()
+    MySQL.query([[
         CREATE TABLE IF NOT EXISTS `qb_reports` (
             `id`             INT          NOT NULL AUTO_INCREMENT,
             `category`       VARCHAR(64)  NOT NULL,
@@ -37,13 +36,8 @@ CreateThread(function()
             INDEX `idx_reporter_id` (`reporter_id`),
             INDEX `idx_created_at`  (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    ]], {}, function(rowsChanged)
-        -- CREATE TABLE IF NOT EXISTS başarısız olursa rowsChanged nil gelir
-        if rowsChanged == false then
-            print('^1[qb-report] HATA: qb_reports tablosu oluşturulamadı! MySQL bağlantısını kontrol edin.^0')
-        else
-            print('^2[qb-report] qb_reports tablosu hazır.^0')
-        end
+    ]], {}, function()
+        print('^2[qb-report] qb_reports tablosu hazır.^0')
     end)
 end)
 
