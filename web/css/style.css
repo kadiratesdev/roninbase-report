@@ -1,82 +1,173 @@
+/* ═══════════════════════════════════════════════════════
+   ricky-report  |  Web NUI Stylesheet
+   İyileştirmeler:
+     • Scrollbar gizleme: -webkit-scrollbar display:none →
+       modern scrollbar-width:none (daha az paint hesabı)
+     • Animasyon süreleri kısaltıldı (1s → 0.3s) → daha akıcı
+     • #app background artık CSS değişkeni kullanıyor
+     • input/button transition eklendi
+     • Yükleniyor overlay animasyonu eklendi
+     • will-change ile GPU katmanı ipucu verildi
+═══════════════════════════════════════════════════════ */
+
 @font-face {
     font-family: 'Main Font';
     src: url(../fonts/font.otf);
+    font-display: swap;  /* font yüklenirken fallback göster */
 }
 
-* {
+:root {
+    --color-bg:       rgba(0, 0, 0, 0.60);
+    --color-surface:  rgba(25, 25, 26, 1);
+    --color-surface2: rgba(38, 38, 39, 1);
+    --color-border:   #8E8E8E;
+    --color-muted:    #7D7D7D;
+    --color-online:   #66DE1D;
+    --color-offline:  #DE1D1D;
+    --duration-fast:  0.2s;
+    --duration-med:   0.3s;
+    --ease:           cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+*,
+*::before,
+*::after {
     margin: 0;
     padding: 0;
+    box-sizing: border-box;
     user-select: none;
-    font-family: 'Main Font';
+    font-family: 'Main Font', sans-serif;
     color: white;
     font-style: normal;
     font-weight: 600;
-    /* letter-spacing: 0.11em; */
-    overflow: hidden;
 }
 
+/* Gizli scrollbar — performanslı yöntem */
+* {
+    scrollbar-width: none;         /* Firefox */
+    -ms-overflow-style: none;      /* IE 11 */
+    overflow: -moz-scrollbars-none;
+}
+*::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    background: transparent;
+}
 
+/* ── App Kapsayıcı ── */
 #app {
     display: none;
     position: absolute;
-    height: 100%;
-    width: 100%;
-    background: rgba(0, 0, 0, 0.599);
-    /* background: linear-gradient(180deg, rgba(193, 126, 26, 0.30) -14.81%, rgba(0, 0, 0, 0.00) 39.58%), linear-gradient(246deg, rgba(49, 193, 26, 0.30) -6.93%, rgba(0, 0, 0, 0.00) 30.15%), linear-gradient(308deg, rgba(140, 26, 193, 0.30) -8.08%, rgba(0, 0, 0, 0.00) 27.56%), linear-gradient(58deg, rgba(26, 193, 133, 0.30) -1.48%, rgba(0, 0, 0, 0.00) 30.91%), linear-gradient(122deg, rgba(255, 255, 255, 0.30) -8.74%, rgba(0, 0, 0, 0.00) 26.06%), linear-gradient(0deg, rgba(5, 25, 32, 0.30) 0%, rgba(5, 25, 32, 0.30) 100%), linear-gradient(0deg, rgba(0, 0, 0, 0.86) 0%, rgba(0, 0, 0, 0.86) 100%); */
+    inset: 0;
+    background: var(--color-bg);
+    will-change: opacity;  /* GPU katmanı → fadeIn/Out daha akıcı */
 }
 
-
-@keyframes opacity {
-    0% {opacity: 0;}
-    100% {opacity: 1;}
+/* ── Vue Geçiş: opacity ── */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
 }
 
 .opacity-enter-active {
-    animation: opacity 0.3s ease forwards;
+    animation: fadeIn var(--duration-med) var(--ease) forwards;
 }
-
 .opacity-leave-active {
-    animation: opacity 0.3s ease forwards reverse;
+    animation: fadeIn var(--duration-med) var(--ease) forwards reverse;
 }
 
-@keyframes sendImage {
-    0% {
-        transform: translateY(-30vh);
-    }
-    100% {
-        transform: translateY(0);
-    }
+/* ── Vue Geçiş: sendImage (yukarıdan aşağı) ── */
+@keyframes slideDown {
+    from { transform: translateY(-30vh); opacity: 0; }
+    to   { transform: translateY(0);     opacity: 1; }
 }
 
 .sendImage-enter-active {
-    animation: sendImage 1s ease forwards;
+    animation: slideDown var(--duration-med) var(--ease) forwards;
 }
-
 .sendImage-leave-active {
-    animation: sendImage 1s ease forwards reverse;
+    animation: slideDown var(--duration-med) var(--ease) forwards reverse;
 }
 
-input:focus {
-    outline: none;
-}
-
-::-webkit-scrollbar {
-    display: none;
-}
-
-@keyframes notify {
-    0% {
-        transform: translateX(-35vh);
-    }
-    100% {
-        transform: translateX(0);
-    }
+/* ── Vue Geçiş: notify (soldan sağa) ── */
+@keyframes slideRight {
+    from { transform: translateX(-35vh); opacity: 0; }
+    to   { transform: translateX(0);     opacity: 1; }
 }
 
 .notify-enter-active {
-    animation: notify 1s ease forwards;
+    animation: slideRight var(--duration-med) var(--ease) forwards;
+}
+.notify-leave-active {
+    animation: slideRight var(--duration-med) var(--ease) forwards reverse;
 }
 
-.notify-leave-active {
-    animation: notify 1s ease forwards reverse;
+/* ── Input Fokus ── */
+input:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.4) !important;
+    transition: border-color var(--duration-fast) var(--ease);
+}
+
+/* ── Hover efektleri ── */
+[class*="cursor-pointer"] {
+    transition: background-color var(--duration-fast) var(--ease),
+                transform        var(--duration-fast) var(--ease);
+}
+[class*="cursor-pointer"]:active {
+    transform: scale(0.97);
+}
+
+/* ── Tablo satır hover ── */
+tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.04) !important;
+    transition: background-color var(--duration-fast) var(--ease);
+}
+
+/* ── DataTables renk düzeltmesi ── */
+.dataTables_wrapper .dataTables_filter input,
+.dataTables_wrapper .dataTables_length select {
+    background: var(--color-surface) !important;
+    border: 1px solid var(--color-border) !important;
+    border-radius: 6px !important;
+    padding: 4px 8px !important;
+    color: white !important;
+}
+
+.dataTables_wrapper .dataTables_paginate .paginate_button {
+    color: white !important;
+    border-radius: 4px !important;
+    transition: background var(--duration-fast) var(--ease) !important;
+}
+
+.dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+    background: rgba(255,255,255,0.12) !important;
+    border-color: transparent !important;
+    color: white !important;
+}
+
+.dataTables_wrapper .dataTables_paginate .paginate_button.current {
+    background: rgba(255,255,255,0.2) !important;
+    border-color: var(--color-border) !important;
+    color: white !important;
+}
+
+/* ── Status renk noktaları için glow ── */
+.rounded-full {
+    transition: box-shadow var(--duration-fast) var(--ease);
+}
+
+/* Online: yeşil glow */
+.bg-\[\#66DE1D\] {
+    box-shadow: 0 0 8px 2px rgba(102, 222, 29, 0.5);
+}
+
+/* Offline: kırmızı glow */
+.bg-\[\#DE1D1D\] {
+    box-shadow: 0 0 8px 2px rgba(222, 29, 29, 0.5);
+}
+
+/* ── Notify kutusu gölge ── */
+.border-\[\#8E8E8E\] {
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
 }

@@ -1,8 +1,7 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 --  qb-report  |  client.lua
 --  Performans notları:
---    • ESC thread: NUI kapalıyken Citizen.Wait(500) → CPU'ya yük yok
---    • NUI açıkken: Citizen.Wait(0) ile anlık ESC algılaması
+--    • ESC: Lua thread yok; JS keydown → nuiPost('escPressed') → CloseNUI()
 --    • NUI Callback'lerde tip + uzunluk kontrolü yapılır
 --    • Server'a asla ham/unsafe veri gönderilmez
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -194,19 +193,10 @@ RegisterNUICallback('refreshReports', function(_, cb)
 end)
 
 -- ─────────────────────────────────────────
---  ESC Thread  (optimize edilmiş)
---  NUI kapalıyken 500ms uyur → ~0% CPU kullanımı
---  NUI açıkken  0ms   döner  → anlık ESC algılaması
+--  ESC → JS tarafında yakalanıp buraya callback gelir
+--  Thread yok → sıfır CPU kullanımı
 -- ─────────────────────────────────────────
-Citizen.CreateThread(function()
-    while true do
-        if isNUIOpen or isAdminOpen then
-            Citizen.Wait(0)
-            if IsControlJustReleased(0, 200) then  -- INPUT_FRONTEND_CANCEL (ESC)
-                CloseNUI()
-            end
-        else
-            Citizen.Wait(500)
-        end
-    end
+RegisterNUICallback('escPressed', function(_, cb)
+    CloseNUI()
+    cb('ok')
 end)
