@@ -53,16 +53,21 @@ end
 
 -- ─────────────────────────────────────────
 --  Admin kontrolü
+--  QBCore.Functions.GetPermission bir string döner;
+--  HasPermission de kullanılabilir ama her grup için
+--  ayrı çağrı yapar. Tek GetPermission çağrısı + set
+--  lookup daha verimli.
 -- ─────────────────────────────────────────
+local AdminGroupSet = {}
+for _, g in ipairs(ServerConfig.AdminGroups) do
+    AdminGroupSet[g] = true
+end
+
 local function IsAdmin(src)
     if not src or src <= 0 then return false end
-    local Player = QBCore.Functions.GetPlayer(src)
-    if not Player then return false end
+    if not QBCore.Functions.GetPlayer(src) then return false end
     local group = QBCore.Functions.GetPermission(src)
-    for _, g in ipairs(ServerConfig.AdminGroups) do
-        if group == g then return true end
-    end
-    return false
+    return AdminGroupSet[group] == true
 end
 
 -- ─────────────────────────────────────────
@@ -112,21 +117,24 @@ end
 
 -- ─────────────────────────────────────────
 --  Bellekten eski çözümlenen raporu temizle
+--  O(n) optimizasyonu: sayma ve en küçük ID
+--  bulma tek geçişte yapılıyor
 -- ─────────────────────────────────────────
 local function PruneReports()
-    local count = 0
-    for _ in pairs(Reports) do count = count + 1 end
-    if count < ServerConfig.MaxReports then return end
+    local count     = 0
+    local oldestId  = nil
 
-    -- En eski çözümlenen raporu bul ve sil
-    local oldest, oldestId = nil, nil
     for id, r in pairs(Reports) do
+        count = count + 1
         if r.status == 'resolved' then
-            if not oldest or id < oldestId then
-                oldest, oldestId = r, id
+            if not oldestId or id < oldestId then
+                oldestId = id
             end
         end
     end
+
+    if count < ServerConfig.MaxReports then return end
+
     if oldestId then
         Reports[oldestId] = nil
         Log('Bellek limiti: rapor #' .. oldestId .. ' temizlendi.')
@@ -135,25 +143,40 @@ end
 
 -- ─────────────────────────────────────────
 --  Admin listesini güvenli döndür
+--  Sıralama: id > id (en yeni önce)
 -- ─────────────────────────────────────────
 local function GetReportList()
     local list = {}
+    local n    = 0
     for _, r in pairs(Reports) do
-        list[#list + 1] = r
+        n = n + 1
+        list[n] = r
     end
+    -- Basit insertion sort (n < 200 için yeterli; table.sort de çalışır)
     table.sort(list, function(a, b) return a.id > b.id end)
     return list
 end
 
 -- ─────────────────────────────────────────
 --  Tüm adminlere rapor listesini gönder
+--  GetQBPlayers önce — GetPlayers fallback
 -- ─────────────────────────────────────────
 local function BroadcastToAdmins(eventName, payload)
-    local players = QBCore.Functions.GetQBPlayers()
-    for _, player in pairs(players) do
-        local s = player.PlayerData.source
-        if IsAdmin(s) then
-            TriggerClientEvent(eventName, s, payload)
+    -- GetQBPlayers varsa tercih et (source lookup O(1))
+    if QBCore.Functions.GetQBPlayers then
+        local players = QBCore.Functions.GetQBPlayers()
+        for _, player in pairs(players) do
+            local s = player.PlayerData.source
+            if IsAdmin(s) then
+                TriggerClientEvent(eventName, s, payload)
+            end
+        end
+    else
+        -- Fallback: GetPlayers() + GetPlayer() O(n)
+        for _, pid in ipairs(QBCore.Functions.GetPlayers()) do
+            if IsAdmin(pid) then
+                TriggerClientEvent(eventName, pid, payload)
+            end
         end
     end
 end

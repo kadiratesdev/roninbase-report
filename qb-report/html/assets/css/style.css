@@ -853,3 +853,179 @@ body {
     .report-modal, .admin-modal { width: 96vw; }
     .category-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ════════════════════════════════════════
+   CONFIRM DIALOG
+════════════════════════════════════════ */
+.confirm-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 9998;
+    animation: fadeOverlay 0.2s var(--ease);
+}
+
+.confirm-overlay.hidden { display: none; }
+
+@keyframes fadeOverlay {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.confirm-dialog {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 28px 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    max-width: 340px;
+    width: 90%;
+    animation: modalIn 0.2s var(--ease);
+}
+
+.confirm-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: #f59e0b;
+}
+
+.confirm-message {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-align: center;
+    line-height: 1.5;
+}
+
+.confirm-actions {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    justify-content: center;
+}
+
+/* ════════════════════════════════════════
+   LOADING SPINNER
+════════════════════════════════════════ */
+.loading-spinner {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9997;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.loading-spinner.hidden { display: none; }
+
+.spinner-ring {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ════════════════════════════════════════
+   BUTTON: Alert pulse (yeni rapor uyarısı)
+════════════════════════════════════════ */
+.btn-alert-pulse {
+    border-color: var(--status-open) !important;
+    color: var(--status-open) !important;
+    animation: alertPulse 0.6s var(--ease) 3;
+}
+
+@keyframes alertPulse {
+    0%, 100% { box-shadow: none; }
+    50%       { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.35); }
+}
+
+/* ════════════════════════════════════════
+   PLAYER LIST: boş durum
+════════════════════════════════════════ */
+.player-empty {
+    padding: 14px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+/* ════════════════════════════════════════
+   REPORT CARD: yeni kart girişi animasyonu
+   (daha yumuşak; eskisi translateX(-8px) idi)
+════════════════════════════════════════ */
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* ════════════════════════════════════════
+   TEXTAREA: karakter sayacı renk geçişi
+════════════════════════════════════════ */
+.char-counter {
+    transition: color var(--duration) var(--ease);
+}
+
+/* ════════════════════════════════════════
+   OVERLAY: fade-in geçişi (display:none
+   → flex) için opacity animate et
+════════════════════════════════════════ */
+.overlay:not(.hidden) {
+    animation: fadeOverlay 0.25s var(--ease);
+}
+
+/* ════════════════════════════════════════
+   FOCUS yönetimi: klavye erişilebilirliği
+════════════════════════════════════════ */
+.btn:focus-visible,
+.tab-btn:focus-visible,
+.cat-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* ════════════════════════════════════════
+   CAT CARD: renk vurgusu (--cat-color)
+════════════════════════════════════════ */
+.cat-card.selected {
+    border-color: var(--cat-color, var(--accent));
+    box-shadow: 0 0 0 1px var(--cat-color, var(--accent)),
+                0 6px 20px color-mix(in srgb, var(--cat-color, var(--accent)) 35%, transparent);
+}
+
+/* color-mix fallback */
+@supports not (color: color-mix(in srgb, red, blue)) {
+    .cat-card.selected {
+        box-shadow: 0 0 0 1px var(--accent), 0 6px 20px var(--accent-glow);
+    }
+}
+
+.cat-check {
+    background: var(--cat-color, var(--accent));
+}
